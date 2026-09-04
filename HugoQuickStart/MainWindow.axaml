@@ -1,0 +1,350 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:vm="using:HugoQuickStart.ViewModels"
+        xmlns:models="using:HugoQuickStart.Models"
+        mc:Ignorable="d" d:DesignWidth="380" d:DesignHeight="520"
+        x:Class="HugoQuickStart.MainWindow"
+        x:DataType="vm:MainViewModel"
+        Title="快捷启动"
+        Width="380"
+        SizeToContent="Height"
+        CanResize="False"
+        WindowDecorations="None"
+        WindowStartupLocation="Manual"
+        TransparencyLevelHint="Transparent"
+        Background="Transparent"
+        BorderThickness="0"
+        CornerRadius="12">
+
+    <Design.DataContext>
+        <vm:MainViewModel/>
+    </Design.DataContext>
+
+    <Window.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.ThemeDictionaries>
+                <ResourceDictionary x:Key="Light">
+                    <SolidColorBrush x:Key="PanelBackgroundBrush" Color="#66F9F9F9"/>
+                    <SolidColorBrush x:Key="PanelBorderBrush" Color="#1F000000"/>
+                </ResourceDictionary>
+                <ResourceDictionary x:Key="Dark">
+                    <SolidColorBrush x:Key="PanelBackgroundBrush" Color="#661F1F1F"/>
+                    <SolidColorBrush x:Key="PanelBorderBrush" Color="#26FFFFFF"/>
+                </ResourceDictionary>
+            </ResourceDictionary.ThemeDictionaries>
+        </ResourceDictionary>
+    </Window.Resources>
+
+    <Border CornerRadius="12"
+            Background="{DynamicResource PanelBackgroundBrush}"
+            BorderBrush="{DynamicResource PanelBorderBrush}"
+            BorderThickness="1">
+        <Grid RowDefinitions="36,*,Auto">
+            <!-- Title Bar -->
+            <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto,Auto"
+                  Background="Transparent"
+                  x:Name="TitleBar">
+                <TextBlock Grid.Column="0"
+                           Text="快捷启动"
+                           FontSize="14"
+                           FontWeight="SemiBold"
+                           VerticalAlignment="Center"
+                           Margin="16,0,0,0"
+                           Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+
+                <!-- Menu/Settings Button -->
+                <Button Grid.Column="1"
+                        Content="&#xE713;"
+                        Classes="icon"
+                        Click="SettingsButton_Click"
+                        ToolTip.Tip="设置"/>
+
+                <!-- Edit Button -->
+                <Button Grid.Column="2"
+                        Content="&#xE70F;"
+                        Classes="icon"
+                        Click="EditButton_Click"
+                        ToolTip.Tip="编辑"/>
+
+                <!-- Minimize Button -->
+                <Button Grid.Column="3"
+                        Content="&#xE921;"
+                        Classes="icon"
+                        Click="MinimizeButton_Click"
+                        ToolTip.Tip="最小化"/>
+            </Grid>
+
+            <!-- Content -->
+            <ScrollViewer Grid.Row="1"
+                          HorizontalScrollBarVisibility="Disabled"
+                          VerticalScrollBarVisibility="Auto">
+                <StackPanel Margin="12,8,12,12" Spacing="16">
+
+                    <!-- Quick Entries Section -->
+                    <StackPanel Spacing="8">
+                        <TextBlock Text="快捷入口"
+                                   FontSize="13"
+                                   FontWeight="SemiBold"
+                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                   Margin="4,0,0,0"/>
+                        <ItemsControl ItemsSource="{Binding QuickEntries}" x:Name="QuickEntriesControl">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <WrapPanel Orientation="Horizontal" ItemWidth="80" ItemHeight="90"/>
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="models:AppItem">
+                                    <Grid>
+                                        <Button x:Name="AppButton"
+                                                HorizontalAlignment="Stretch"
+                                                VerticalAlignment="Stretch"
+                                                Background="Transparent"
+                                                BorderThickness="0"
+                                                Padding="4"
+                                                CornerRadius="8"
+                                                Command="{Binding #QuickEntriesControl.DataContext.LaunchAppCommand}"
+                                                CommandParameter="{Binding}">
+                                            <Button.Styles>
+                                                <Style Selector="Button:pointerover">
+                                                    <Setter Property="Background" Value="{DynamicResource SubtleFillColorTertiaryBrush}"/>
+                                                </Style>
+                                            </Button.Styles>
+                                            <StackPanel HorizontalAlignment="Center"
+                                                        VerticalAlignment="Center"
+                                                        Spacing="4">
+                                                <!-- Icon: 显示EXE真实图标；无图标时透出占位符 -->
+                                                <Grid Width="48" Height="48"
+                                                      HorizontalAlignment="Center">
+                                                    <Border CornerRadius="10"
+                                                            Background="{DynamicResource SubtleFillColorTertiaryBrush}">
+                                                        <TextBlock Text="&#xE71D;"
+                                                                   FontSize="24"
+                                                                   HorizontalAlignment="Center"
+                                                                   VerticalAlignment="Center"
+                                                                   Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+                                                    </Border>
+                                                    <Image Source="{Binding Icon}"
+                                                           Stretch="Uniform"
+                                                           Margin="4"/>
+                                                </Grid>
+                                                <TextBlock Text="{Binding Name}"
+                                                           FontSize="11"
+                                                           TextAlignment="Center"
+                                                           TextWrapping="Wrap"
+                                                           MaxLines="2"
+                                                           Foreground="{DynamicResource TextFillColorPrimaryBrush}"
+                                                           HorizontalAlignment="Center"/>
+                                            </StackPanel>
+                                        </Button>
+
+                                        <!-- Edit button in edit mode -->
+                                        <Button Content="&#xE70F;"
+                                                Width="20" Height="20"
+                                                CornerRadius="10"
+                                                HorizontalAlignment="Left"
+                                                VerticalAlignment="Top"
+                                                Margin="2,2,0,0"
+                                                Padding="0"
+                                                FontSize="9"
+                                                Background="{DynamicResource AccentFillColorDefaultBrush}"
+                                                Foreground="White"
+                                                IsVisible="{Binding #QuickEntriesControl.DataContext.IsEditMode}"
+                                                Click="QuickEntryEdit_Click"
+                                                Tag="{Binding}"/>
+
+                                        <!-- Delete button in edit mode -->
+                                        <Button Content="&#xE711;"
+                                                Width="20" Height="20"
+                                                CornerRadius="10"
+                                                HorizontalAlignment="Right"
+                                                VerticalAlignment="Top"
+                                                Margin="0,2,2,0"
+                                                Padding="0"
+                                                FontSize="10"
+                                                Background="{DynamicResource FillColorCriticalBrush}"
+                                                Foreground="White"
+                                                IsVisible="{Binding #QuickEntriesControl.DataContext.IsEditMode}"
+                                                Command="{Binding #QuickEntriesControl.DataContext.RemoveAppCommand}"
+                                                CommandParameter="{Binding}"/>
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+
+                        <!-- Add button in edit mode -->
+                        <Button Content="+ 添加"
+                                HorizontalAlignment="Left"
+                                IsVisible="{Binding IsEditMode}"
+                                Classes="hyper"
+                                Click="AddQuickEntry_Click"
+                                Margin="4,0,0,0"/>
+                    </StackPanel>
+
+                    <!-- Xiwo Apps Section -->
+                    <StackPanel Spacing="8">
+                        <TextBlock Text="希沃软件"
+                                   FontSize="13"
+                                   FontWeight="SemiBold"
+                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                   Margin="4,0,0,0"/>
+                        <ItemsControl ItemsSource="{Binding XiwoApps}" x:Name="XiwoAppsControl">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <WrapPanel Orientation="Horizontal" ItemWidth="80" ItemHeight="90"/>
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="models:AppItem">
+                                    <Grid>
+                                        <Button HorizontalAlignment="Stretch"
+                                                VerticalAlignment="Stretch"
+                                                Background="Transparent"
+                                                BorderThickness="0"
+                                                Padding="4"
+                                                CornerRadius="8"
+                                                Command="{Binding #XiwoAppsControl.DataContext.LaunchAppCommand}"
+                                                CommandParameter="{Binding}">
+                                            <Button.Styles>
+                                                <Style Selector="Button:pointerover">
+                                                    <Setter Property="Background" Value="{DynamicResource SubtleFillColorTertiaryBrush}"/>
+                                                </Style>
+                                            </Button.Styles>
+                                            <StackPanel HorizontalAlignment="Center"
+                                                        VerticalAlignment="Center"
+                                                        Spacing="4">
+                                                <!-- Icon: 显示EXE真实图标；无图标时透出占位符 -->
+                                                <Grid Width="48" Height="48"
+                                                      HorizontalAlignment="Center">
+                                                    <Border CornerRadius="10"
+                                                            Background="{DynamicResource SubtleFillColorTertiaryBrush}">
+                                                        <TextBlock Text="&#xE71D;"
+                                                                   FontSize="24"
+                                                                   HorizontalAlignment="Center"
+                                                                   VerticalAlignment="Center"
+                                                                   Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+                                                    </Border>
+                                                    <Image Source="{Binding Icon}"
+                                                           Stretch="Uniform"
+                                                           Margin="4"/>
+                                                </Grid>
+                                                <TextBlock Text="{Binding Name}"
+                                                           FontSize="11"
+                                                           TextAlignment="Center"
+                                                           TextWrapping="Wrap"
+                                                           MaxLines="2"
+                                                           Foreground="{DynamicResource TextFillColorPrimaryBrush}"
+                                                           HorizontalAlignment="Center"/>
+                                            </StackPanel>
+                                        </Button>
+
+                                        <!-- Edit button in edit mode -->
+                                        <Button Content="&#xE70F;"
+                                                Width="20" Height="20"
+                                                CornerRadius="10"
+                                                HorizontalAlignment="Left"
+                                                VerticalAlignment="Top"
+                                                Margin="2,2,0,0"
+                                                Padding="0"
+                                                FontSize="9"
+                                                Background="{DynamicResource AccentFillColorDefaultBrush}"
+                                                Foreground="White"
+                                                IsVisible="{Binding #XiwoAppsControl.DataContext.IsEditMode}"
+                                                Click="XiwoAppEdit_Click"
+                                                Tag="{Binding}"/>
+
+                                        <!-- Delete button in edit mode -->
+                                        <Button Content="&#xE711;"
+                                                Width="20" Height="20"
+                                                CornerRadius="10"
+                                                HorizontalAlignment="Right"
+                                                VerticalAlignment="Top"
+                                                Margin="0,2,2,0"
+                                                Padding="0"
+                                                FontSize="10"
+                                                Background="{DynamicResource FillColorCriticalBrush}"
+                                                Foreground="White"
+                                                IsVisible="{Binding #XiwoAppsControl.DataContext.IsEditMode}"
+                                                Command="{Binding #XiwoAppsControl.DataContext.RemoveAppCommand}"
+                                                CommandParameter="{Binding}"/>
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+
+                        <!-- Add button in edit mode -->
+                        <Button Content="+ 添加"
+                                HorizontalAlignment="Left"
+                                IsVisible="{Binding IsEditMode}"
+                                Classes="hyper"
+                                Click="AddXiwoApp_Click"
+                                Margin="4,0,0,0"/>
+                    </StackPanel>
+
+                </StackPanel>
+            </ScrollViewer>
+
+            <!-- Status message overlay -->
+            <Border Grid.Row="1"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Bottom"
+                    Margin="0,0,0,12"
+                    Padding="14,7"
+                    CornerRadius="14"
+                    Background="#D9000000"
+                    IsVisible="{Binding HasStatus}">
+                <TextBlock Text="{Binding StatusMessage}"
+                           FontSize="12"
+                           Foreground="White"
+                           TextAlignment="Center"
+                           TextWrapping="Wrap"
+                           MaxWidth="340"/>
+            </Border>
+
+            <!-- Edit Mode Indicator -->
+            <Border Grid.Row="2"
+                    Background="{DynamicResource AccentFillColorDefaultBrush}"
+                    IsVisible="{Binding IsEditMode}"
+                    CornerRadius="0,0,12,12"
+                    Padding="12,8">
+                <TextBlock Text="编辑模式 - 点击 + 添加 / 点击 ✎ 编辑 / 点击 × 删除"
+                           FontSize="11"
+                           Foreground="White"
+                           HorizontalAlignment="Center"/>
+            </Border>
+        </Grid>
+    </Border>
+
+    <Window.Styles>
+        <Style Selector="Button.icon">
+            <Setter Property="Width" Value="32"/>
+            <Setter Property="Height" Value="28"/>
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="CornerRadius" Value="6"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="FontFamily" Value="Segoe MDL2 Assets, Segoe UI Symbol"/>
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="HorizontalAlignment" Value="Center"/>
+            <Setter Property="Margin" Value="2,0"/>
+        </Style>
+        <Style Selector="Button.icon:pointerover">
+            <Setter Property="Background" Value="{DynamicResource SubtleFillColorTertiaryBrush}"/>
+        </Style>
+        <Style Selector="Button.hyper">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Foreground" Value="{DynamicResource AccentFillColorDefaultBrush}"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Padding" Value="8,4"/>
+            <Setter Property="CornerRadius" Value="4"/>
+        </Style>
+        <Style Selector="Button.hyper:pointerover">
+            <Setter Property="Background" Value="{DynamicResource SubtleFillColorTertiaryBrush}"/>
+        </Style>
+    </Window.Styles>
+</Window>

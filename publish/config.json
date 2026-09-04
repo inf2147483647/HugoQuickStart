@@ -1,0 +1,54 @@
+{
+  "QuickEntries": [
+    {
+      "Name": "ClassIsland \u8BBE\u7F6E",
+      "Path": "classisland://app/settings",
+      "IconPath": "",
+      "Category": "\u5FEB\u6377\u5165\u53E3",
+      "Arguments": ""
+    },
+    {
+      "Name": "Seerandom \u70B9\u540D",
+      "Path": "secrandom://window/main",
+      "IconPath": "",
+      "Category": "\u5FEB\u6377\u5165\u53E3",
+      "Arguments": ""
+    }
+  ],
+  "XiwoApps": [
+    {
+      "Name": "\u5E0C\u6C83\u767D\u677F5",
+      "Path": "C:\\Program Files (x86)\\Seewo\\EasiNote5\\EasiNote.exe",
+      "IconPath": "",
+      "Category": "\u5E0C\u6C83\u8F6F\u4EF6",
+      "Arguments": ""
+    },
+    {
+      "Name": "\u5E0C\u6C83\u89C6\u9891\u5C55\u53F0",
+      "Path": "C:\\Program Files (x86)\\Seewo\\EasiCamera\\EasiCamera.exe",
+      "IconPath": "",
+      "Category": "\u5E0C\u6C83\u8F6F\u4EF6",
+      "Arguments": ""
+    },
+    {
+      "Name": "Minecraft",
+      "Path": "",
+      "IconPath": "",
+      "Category": "\u5E0C\u6C83\u8F6F\u4EF6",
+      "Arguments": ""
+    },
+    {
+      "Name": "VRChat",
+      "Path": "D:\\Program Files (x86)\\Steam\\steamapps\\common\\VRChat\\VRChat.exe",
+      "IconPath": "",
+      "Category": "\u5E0C\u6C83\u8F6F\u4EF6",
+      "Arguments": ""
+    }
+  ],
+  "AutoStart": false,
+  "StartMinimized": true,
+  "WindowWidth": 380,
+  "WindowHeight": 500,
+  "MarginRight": 20,
+  "MarginBottom": 60
+}
