@@ -94,3 +94,4 @@ c:\Users\Administrator\RiderProjects\HugoQuickStart\HugoQuickStart\obj\Release\n
 c:\Users\Administrator\RiderProjects\HugoQuickStart\HugoQuickStart\obj\Release\net10.0\HugoQuickStart.pdb
 c:\Users\Administrator\RiderProjects\HugoQuickStart\HugoQuickStart\obj\Release\net10.0\HugoQuickStart.genruntimeconfig.cache
 c:\Users\Administrator\RiderProjects\HugoQuickStart\HugoQuickStart\obj\Release\net10.0\ref\HugoQuickStart.dll
+c:\Users\Administrator\RiderProjects\HugoQuickStart\HugoQuickStart\obj\Release\net10.0\HugoQuickStart.sourcelink.json

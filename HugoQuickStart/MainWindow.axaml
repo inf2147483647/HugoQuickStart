@@ -118,8 +118,10 @@
                                                 <!-- Icon: 显示EXE真实图标；无图标时透出占位符 -->
                                                 <Grid Width="48" Height="48"
                                                       HorizontalAlignment="Center">
+                                                    <!-- 占位符：仅当无真实图标时显示 -->
                                                     <Border CornerRadius="10"
-                                                            Background="{DynamicResource SubtleFillColorTertiaryBrush}">
+                                                            Background="{DynamicResource SubtleFillColorTertiaryBrush}"
+                                                            IsVisible="{Binding ShowPlaceholder}">
                                                         <TextBlock Text="&#xE71D;"
                                                                    FontSize="24"
                                                                    HorizontalAlignment="Center"
@@ -218,8 +220,10 @@
                                                 <!-- Icon: 显示EXE真实图标；无图标时透出占位符 -->
                                                 <Grid Width="48" Height="48"
                                                       HorizontalAlignment="Center">
+                                                    <!-- 占位符：仅当无真实图标时显示 -->
                                                     <Border CornerRadius="10"
-                                                            Background="{DynamicResource SubtleFillColorTertiaryBrush}">
+                                                            Background="{DynamicResource SubtleFillColorTertiaryBrush}"
+                                                            IsVisible="{Binding ShowPlaceholder}">
                                                         <TextBlock Text="&#xE71D;"
                                                                    FontSize="24"
                                                                    HorizontalAlignment="Center"

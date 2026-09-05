@@ -11,6 +11,7 @@ public class AppItem : INotifyPropertyChanged
     private string _iconPath = string.Empty;
     private string _category = string.Empty;
     private string _arguments = string.Empty;
+    private string _matchKey = string.Empty;
     private Bitmap? _icon;
 
     public string Name
@@ -43,13 +44,32 @@ public class AppItem : INotifyPropertyChanged
         set { _arguments = value; OnPropertyChanged(nameof(Arguments)); }
     }
 
+    /// <summary>
+    /// 默认应用的自动解析标识（如 seewo.easinote / vrchat）。
+    /// 为空表示用户自定义应用，不参与自动匹配。
+    /// </summary>
+    public string MatchKey
+    {
+        get => _matchKey;
+        set { _matchKey = value; OnPropertyChanged(nameof(MatchKey)); }
+    }
+
     /// <summary>从目标 exe/快捷方式提取的真实图标（不写入配置文件）。</summary>
     [JsonIgnore]
     public Bitmap? Icon
     {
         get => _icon;
-        set { _icon = value; OnPropertyChanged(nameof(Icon)); }
+        set
+        {
+            _icon = value;
+            OnPropertyChanged(nameof(Icon));
+            OnPropertyChanged(nameof(ShowPlaceholder));
+        }
     }
+
+    /// <summary>暂无真实图标时显示默认占位符；已有图标时隐藏占位符。</summary>
+    [JsonIgnore]
+    public bool ShowPlaceholder => Icon == null;
 
     [JsonIgnore]
     public bool HasCustomIcon => !string.IsNullOrEmpty(IconPath) && System.IO.File.Exists(IconPath);

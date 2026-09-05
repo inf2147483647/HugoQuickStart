@@ -26,6 +26,10 @@ public partial class MainViewModel : ObservableObject
     
     [ObservableProperty]
     private bool _autoStart;
+
+    /// <summary>是否拦截希沃服务助手（SeewoServiceAssistant.exe）的右下角悬浮窗。</summary>
+    [ObservableProperty]
+    private bool _blockSeewoAssistantWindow = true;
     
     [ObservableProperty]
     private bool _showSettings;
@@ -37,12 +41,102 @@ public partial class MainViewModel : ObservableObject
     private bool _hasStatus;
 
     private DispatcherTimer? _statusTimer;
+    private DispatcherTimer? _resolveTimer;
+
+    private const int ResolveIntervalSeconds = 20;
 
     public MainViewModel()
     {
         _configService = new AppConfigService();
         LoadConfig();
-        _ = RefreshIconsAsync();
+        NormalizeMatchKeys();
+        _ = InitialLoadAsync();
+    }
+
+    private async Task InitialLoadAsync()
+    {
+        await ResolveDefaultsAsync();
+        StartResolveTimer();
+    }
+
+    /// <summary>为旧配置/历史条目补齐 MatchKey（无则按名称推断），便于自动匹配。</summary>
+    private void NormalizeMatchKeys()
+    {
+        foreach (var app in QuickEntries.Concat(XiwoApps))
+        {
+            if (string.IsNullOrWhiteSpace(app.MatchKey))
+                app.MatchKey = DefaultAppResolver.InferMatchKeyFromName(app.Name);
+        }
+    }
+
+    private static string GetMatchKey(AppItem app) =>
+        !string.IsNullOrWhiteSpace(app.MatchKey)
+            ? app.MatchKey
+            : DefaultAppResolver.InferMatchKeyFromName(app.Name);
+
+    /// <summary>
+    /// 解析默认应用中缺失/失效的路径：枚举已安装应用→匹配→找到对应 EXE→绑定（图标在刷新时映射）。
+    /// 当前路径有效（文件存在或为 URI）时不覆盖，尊重用户手动设置的路径。
+    /// </summary>
+    public async Task ResolveDefaultsAsync()
+    {
+        var matched = QuickEntries.Concat(XiwoApps)
+            .Where(app => !string.IsNullOrWhiteSpace(GetMatchKey(app)))
+            .ToList();
+        if (matched.Count == 0)
+            return;
+
+        // 注册表/Steam 扫描放到后台线程，避免阻塞 UI
+        var resolutions = await Task.Run(() =>
+        {
+            var dict = new Dictionary<AppItem, string?>();
+            foreach (var app in matched)
+            {
+                if (IsValidPath(app.Path))
+                    continue;
+                dict[app] = DefaultAppResolver.Resolve(GetMatchKey(app));
+            }
+            return dict;
+        });
+
+        var changed = false;
+        foreach (var (app, resolved) in resolutions)
+        {
+            if (!string.IsNullOrWhiteSpace(resolved) &&
+                !string.Equals(resolved, app.Path, StringComparison.OrdinalIgnoreCase))
+            {
+                app.Path = resolved;
+                changed = true;
+            }
+        }
+
+        if (changed)
+            SaveConfig();
+        await RefreshIconsAsync();
+    }
+
+    /// <summary>路径当前是否可用：存在文件，或为可用的 URI 协议。</summary>
+    private static bool IsValidPath(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+            return false;
+        if (ProcessLauncher.IsUri(path))
+            return true;
+        return ProcessLauncher.ResolvePath(path) != null;
+    }
+
+    /// <summary>启动周期扫描，用于检测“运行期间安装/卸载应用”导致的列表变化并重新匹配。</summary>
+    private void StartResolveTimer()
+    {
+        _resolveTimer = new DispatcherTimer
+        {
+            Interval = TimeSpan.FromSeconds(ResolveIntervalSeconds)
+        };
+        _resolveTimer.Tick += async (_, _) =>
+        {
+            await ResolveDefaultsAsync();
+        };
+        _resolveTimer.Start();
     }
 
     private void LoadConfig()
@@ -51,6 +145,7 @@ public partial class MainViewModel : ObservableObject
         QuickEntries = new ObservableCollection<AppItem>(config.QuickEntries);
         XiwoApps = new ObservableCollection<AppItem>(config.XiwoApps);
         AutoStart = config.AutoStart;
+        BlockSeewoAssistantWindow = config.BlockSeewoAssistantWindow;
     }
 
     public void SaveConfig()
@@ -59,7 +154,8 @@ public partial class MainViewModel : ObservableObject
         {
             QuickEntries = new List<AppItem>(QuickEntries),
             XiwoApps = new List<AppItem>(XiwoApps),
-            AutoStart = AutoStart
+            AutoStart = AutoStart,
+            BlockSeewoAssistantWindow = BlockSeewoAssistantWindow
         };
         _configService.Save(config);
         // 配置可能被修改（新增/编辑路径），重新加载缺失的图标
@@ -189,6 +285,11 @@ public partial class MainViewModel : ObservableObject
     partial void OnAutoStartChanged(bool value)
     {
         StartupService.SetAutoStart(value);
+        SaveConfig();
+    }
+
+    partial void OnBlockSeewoAssistantWindowChanged(bool value)
+    {
         SaveConfig();
     }
 }

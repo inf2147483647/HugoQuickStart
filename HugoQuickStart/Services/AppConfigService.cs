@@ -82,14 +82,16 @@ public class AppConfigService
                 new()
                 {
                     Name = "希沃白板5",
-                    Path = @"C:\Program Files (x86)\Seewo\EasiNote5\EasiNote.exe",
+                    Path = "",
+                    MatchKey = DefaultAppResolver.KeyEasiNote,
                     Category = "希沃软件",
                     IconPath = ""
                 },
                 new()
                 {
                     Name = "希沃视频展台",
-                    Path = @"C:\Program Files (x86)\Seewo\EasiCamera\EasiCamera.exe",
+                    Path = "",
+                    MatchKey = DefaultAppResolver.KeyEasiCamera,
                     Category = "希沃软件",
                     IconPath = ""
                 },
@@ -97,6 +99,7 @@ public class AppConfigService
                 {
                     Name = "Minecraft",
                     Path = "",
+                    MatchKey = DefaultAppResolver.KeyMinecraft,
                     Category = "希沃软件",
                     IconPath = ""
                 },
@@ -104,6 +107,7 @@ public class AppConfigService
                 {
                     Name = "VRChat",
                     Path = "",
+                    MatchKey = DefaultAppResolver.KeyVrchat,
                     Category = "希沃软件",
                     IconPath = ""
                 }

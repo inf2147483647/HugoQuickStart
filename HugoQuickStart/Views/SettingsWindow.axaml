@@ -1,0 +1,296 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:vm="using:HugoQuickStart.ViewModels"
+        xmlns:behaviors="using:HugoQuickStart.Behaviors"
+        mc:Ignorable="d" d:DesignWidth="780" d:DesignHeight="520"
+        x:Class="HugoQuickStart.Views.SettingsWindow"
+        x:DataType="vm:MainViewModel"
+        Title="设置"
+        Width="780"
+        Height="520"
+        MinWidth="620"
+        MinHeight="440"
+        WindowStartupLocation="CenterOwner">
+
+    <Design.DataContext>
+        <vm:MainViewModel/>
+    </Design.DataContext>
+
+    <Window.Styles>
+        <Style Selector="ListBoxItem.navitem">
+            <Setter Property="Padding" Value="10,7"/>
+            <Setter Property="Margin" Value="6,1"/>
+            <Setter Property="CornerRadius" Value="6"/>
+            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+            <Setter Property="FontSize" Value="13"/>
+        </Style>
+    </Window.Styles>
+
+    <Grid ColumnDefinitions="210,*">
+        <!-- ============ 左侧导航 ============ -->
+        <Border Grid.Column="0"
+                Background="{DynamicResource LayerFillColorDefaultBrush}">
+            <Grid RowDefinitions="Auto,Auto,*,Auto">
+                <!-- 应用标识 -->
+                <StackPanel Margin="20,22,12,18" Spacing="6">
+                    <Border Width="40" Height="40"
+                            CornerRadius="9"
+                            Background="{DynamicResource AccentFillColorDefaultBrush}"
+                            HorizontalAlignment="Left">
+                        <TextBlock Text="&#xE7F4;"
+                                   FontFamily="Segoe MDL2 Assets, Segoe UI Symbol"
+                                   FontSize="20"
+                                   Foreground="White"
+                                   HorizontalAlignment="Center"
+                                   VerticalAlignment="Center"/>
+                    </Border>
+                    <TextBlock Text="快捷启动"
+                               FontSize="17"
+                               FontWeight="SemiBold"
+                               Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+                    <TextBlock Text="设置"
+                               FontSize="12"
+                               Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+                </StackPanel>
+
+                <!-- 导航项 -->
+                <ListBox Grid.Row="2"
+                         x:Name="NavList"
+                         Background="Transparent"
+                         BorderThickness="0"
+                         SelectionChanged="NavList_OnSelectionChanged">
+                    <ListBoxItem Classes="navitem" x:Name="NavGeneral">
+                        <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
+                            <TextBlock Text="&#xE713;"
+                                       FontFamily="Segoe MDL2 Assets, Segoe UI Symbol"
+                                       FontSize="15"
+                                       VerticalAlignment="Center"
+                                       Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+                            <TextBlock Grid.Column="1" Text="常规设置"
+                                       VerticalAlignment="Center"
+                                       Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+                        </Grid>
+                    </ListBoxItem>
+                    <ListBoxItem Classes="navitem" x:Name="NavIntercept">
+                        <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
+                            <TextBlock Text="&#xE72E;"
+                                       FontFamily="Segoe MDL2 Assets, Segoe UI Symbol"
+                                       FontSize="15"
+                                       VerticalAlignment="Center"
+                                       Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+                            <TextBlock Grid.Column="1" Text="弹窗拦截"
+                                       VerticalAlignment="Center"
+                                       Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+                        </Grid>
+                    </ListBoxItem>
+                    <ListBoxItem Classes="navitem" x:Name="NavAbout">
+                        <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
+                            <TextBlock Text="&#xE946;"
+                                       FontFamily="Segoe MDL2 Assets, Segoe UI Symbol"
+                                       FontSize="15"
+                                       VerticalAlignment="Center"
+                                       Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+                            <TextBlock Grid.Column="1" Text="关于"
+                                       VerticalAlignment="Center"
+                                       Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+                        </Grid>
+                    </ListBoxItem>
+                </ListBox>
+
+                <!-- 版本占位 -->
+                <TextBlock Grid.Row="3"
+                           Text="v1.0.0"
+                           FontSize="11"
+                           Margin="20,0,0,14"
+                           Foreground="{DynamicResource TextFillColorTertiaryBrush}"/>
+            </Grid>
+        </Border>
+
+        <!-- ============ 右侧内容 ============ -->
+        <Grid Grid.Column="1">
+            <!-- ===== 页面：常规设置 ===== -->
+            <ScrollViewer x:Name="PageGeneral"
+                          VerticalScrollBarVisibility="Auto">
+                <StackPanel x:Name="PageGeneralPanel"
+                            Margin="28,26,28,20" Spacing="8">
+                    <TextBlock Text="常规设置"
+                               FontSize="22"
+                               FontWeight="SemiBold"
+                               Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+                    <TextBlock Text="管理本应用的基础行为。"
+                               FontSize="12"
+                               Margin="0,0,0,12"
+                               Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+
+                    <!-- 开机自启 -->
+                    <Border Padding="16,12"
+                            CornerRadius="8"
+                            Background="{DynamicResource SubtleFillColorTertiaryBrush}">
+                        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="14">
+                            <Border Width="36" Height="36" CornerRadius="8"
+                                    Background="{DynamicResource SubtleFillColorSecondaryBrush}">
+                                <TextBlock Text="&#xE7E8;"
+                                           FontFamily="Segoe MDL2 Assets, Segoe UI Symbol"
+                                           FontSize="16"
+                                           HorizontalAlignment="Center"
+                                           VerticalAlignment="Center"
+                                           Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+                            </Border>
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                                <TextBlock Text="开机自启"
+                                           FontSize="14"
+                                           FontWeight="SemiBold"
+                                           Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+                                <TextBlock Text="在系统启动时自动运行本应用，保持右下角快捷启动可用。"
+                                           FontSize="12"
+                                           TextWrapping="Wrap"
+                                           Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+                            </StackPanel>
+                            <ToggleSwitch Grid.Column="2"
+                                          IsChecked="{Binding AutoStart}"
+                                          VerticalAlignment="Center"/>
+                        </Grid>
+                    </Border>
+                </StackPanel>
+            </ScrollViewer>
+
+            <!-- ===== 页面：弹窗拦截 ===== -->
+            <ScrollViewer x:Name="PageIntercept"
+                          IsVisible="False"
+                          VerticalScrollBarVisibility="Auto">
+                <StackPanel x:Name="PageInterceptPanel"
+                            Margin="28,26,28,20" Spacing="8">
+                    <TextBlock Text="弹窗拦截"
+                               FontSize="22"
+                               FontWeight="SemiBold"
+                               Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+                    <TextBlock Text="拦截希沃服务助手在桌面右下角弹出的悬浮窗。"
+                               FontSize="12"
+                               Margin="0,0,0,12"
+                               Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+
+                    <!-- 拦截希沃悬浮窗 -->
+                    <Border Padding="16,12"
+                            CornerRadius="8"
+                            Background="{DynamicResource SubtleFillColorTertiaryBrush}">
+                        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="14">
+                            <Border Width="36" Height="36" CornerRadius="8"
+                                    Background="{DynamicResource SubtleFillColorSecondaryBrush}">
+                                <TextBlock Text="&#xE72E;"
+                                           FontFamily="Segoe MDL2 Assets, Segoe UI Symbol"
+                                           FontSize="16"
+                                           HorizontalAlignment="Center"
+                                           VerticalAlignment="Center"
+                                           Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+                            </Border>
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                                <TextBlock Text="拦截希沃悬浮窗"
+                                           FontSize="14"
+                                           FontWeight="SemiBold"
+                                           Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+                                <TextBlock Text="自动隐藏 SeewoServiceAssistant.exe 在屏幕右下角弹出的悬浮窗；不影响全屏屏幕锁与其它正常窗口。"
+                                           FontSize="12"
+                                           TextWrapping="Wrap"
+                                           Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+                            </StackPanel>
+                            <ToggleSwitch Grid.Column="2"
+                                          IsChecked="{Binding BlockSeewoAssistantWindow}"
+                                          VerticalAlignment="Center"/>
+                        </Grid>
+                    </Border>
+
+                    <!-- 拦截日志 -->
+                    <Border Padding="16,12"
+                            Margin="0,8,0,0"
+                            CornerRadius="8"
+                            Background="{DynamicResource SubtleFillColorTertiaryBrush}">
+                        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="14">
+                            <Border Width="36" Height="36" CornerRadius="8"
+                                    Background="{DynamicResource SubtleFillColorSecondaryBrush}">
+                                <TextBlock Text="&#xE9D9;"
+                                           FontFamily="Segoe MDL2 Assets, Segoe UI Symbol"
+                                           FontSize="16"
+                                           HorizontalAlignment="Center"
+                                           VerticalAlignment="Center"
+                                           Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+                            </Border>
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                                <TextBlock Text="拦截日志"
+                                           FontSize="14"
+                                           FontWeight="SemiBold"
+                                           Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+                                <TextBlock Text="被隐藏的窗口会记录在程序目录下的 seewo-blocker.log，便于排查误拦截。"
+                                           FontSize="12"
+                                           TextWrapping="Wrap"
+                                           Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+                            </StackPanel>
+                            <Button Grid.Column="2"
+                                    Content="打开目录"
+                                    VerticalAlignment="Center"
+                                    Click="OpenAppDirectory_OnClick"/>
+                        </Grid>
+                    </Border>
+                </StackPanel>
+            </ScrollViewer>
+
+            <!-- ===== 页面：关于 ===== -->
+            <ScrollViewer x:Name="PageAbout"
+                          IsVisible="False"
+                          VerticalScrollBarVisibility="Auto">
+                <StackPanel x:Name="PageAboutPanel"
+                            Margin="28,26,28,20" Spacing="8">
+                    <TextBlock Text="关于"
+                               FontSize="22"
+                               FontWeight="SemiBold"
+                               Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+                    <TextBlock Text="快捷启动（HugoQuickStart）"
+                               FontSize="15"
+                               FontWeight="SemiBold"
+                               Margin="0,14,0,0"
+                               Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+                    <TextBlock x:Name="VersionText"
+                               FontSize="12"
+                               Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+                    <TextBlock Text="一个常驻桌面右下角的快捷启动工具，用于快速打开常用教学软件与应用。"
+                               FontSize="12"
+                               TextWrapping="Wrap"
+                               Margin="0,6,0,12"
+                               Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+
+                    <!-- 目录按钮 -->
+                    <Border Padding="16,12"
+                            CornerRadius="8"
+                            Background="{DynamicResource SubtleFillColorTertiaryBrush}">
+                        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="14">
+                            <Border Width="36" Height="36" CornerRadius="8"
+                                    Background="{DynamicResource SubtleFillColorSecondaryBrush}">
+                                <TextBlock Text="&#xE8B7;"
+                                           FontFamily="Segoe MDL2 Assets, Segoe UI Symbol"
+                                           FontSize="16"
+                                           HorizontalAlignment="Center"
+                                           VerticalAlignment="Center"
+                                           Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+                            </Border>
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                                <TextBlock Text="程序目录"
+                                           FontSize="14"
+                                           FontWeight="SemiBold"
+                                           Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+                                <TextBlock x:Name="AppDirectoryText"
+                                           FontSize="12"
+                                           TextTrimming="CharacterEllipsis"
+                                           Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+                            </StackPanel>
+                            <Button Grid.Column="2"
+                                    Content="打开"
+                                    VerticalAlignment="Center"
+                                    Click="OpenAppDirectory_OnClick"/>
+                        </Grid>
+                    </Border>
+                </StackPanel>
+            </ScrollViewer>
+        </Grid>
+    </Grid>
+</Window>

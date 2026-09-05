@@ -9,7 +9,7 @@ build_property.AvaloniaNameGeneratorAttachDevTools = true
 build_property.AvaloniaUseCompiledBindingsByDefault = true
 build_property.AvaloniaMainPackageVersion = 12.1.2
 build_property.AvaloniaPreviewerNetCoreToolPath = C:\Users\Administrator\.nuget\packages\avalonia\12.1.2\buildTransitive\\..\tools\net8.0\designer\Avalonia.Designer.HostApp.dll
-build_property.AvaloniaResourcePaths = c:\Users\Administrator\RiderProjects\HugoQuickStart\HugoQuickStart\App.axaml,c:\Users\Administrator\RiderProjects\HugoQuickStart\HugoQuickStart\MainWindow.axaml
+build_property.AvaloniaResourcePaths = c:\Users\Administrator\RiderProjects\HugoQuickStart\HugoQuickStart\App.axaml,c:\Users\Administrator\RiderProjects\HugoQuickStart\HugoQuickStart\MainWindow.axaml,c:\Users\Administrator\RiderProjects\HugoQuickStart\HugoQuickStart\Views\SettingsWindow.axaml
 build_property.MvvmToolkitEnableINotifyPropertyChangingSupport = true
 build_property.TargetFramework = net10.0
 build_property.TargetFrameworkIdentifier = .NETCoreApp
@@ -33,4 +33,7 @@ build_property.EnableCodeStyleSeverity =
 build_metadata.AdditionalFiles.SourceItemGroup = AvaloniaXaml
 
 [c:/Users/Administrator/RiderProjects/HugoQuickStart/HugoQuickStart/MainWindow.axaml]
+build_metadata.AdditionalFiles.SourceItemGroup = AvaloniaXaml
+
+[c:/Users/Administrator/RiderProjects/HugoQuickStart/HugoQuickStart/Views/SettingsWindow.axaml]
 build_metadata.AdditionalFiles.SourceItemGroup = AvaloniaXaml

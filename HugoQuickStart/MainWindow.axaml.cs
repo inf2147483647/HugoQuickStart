@@ -6,7 +6,9 @@ using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Media;
 using Avalonia.Threading;
+using FluentAvalonia.UI.Controls;
 using HugoQuickStart.Models;
+using HugoQuickStart.Services;
 using HugoQuickStart.ViewModels;
 using HugoQuickStart.Views;
 
@@ -17,7 +19,10 @@ public partial class MainWindow : Window
     private MainViewModel _viewModel = null!;
     private DispatcherTimer? _bottomTimer;
     private int _dialogCount;
+    private bool _allowClose;
+    private bool _isCloseConfirmShown;
     private Size _lastSize = new Size();
+    private SeewoAssistantWindowBlocker? _seewoBlocker;
 
     public MainWindow()
     {
@@ -25,11 +30,24 @@ public partial class MainWindow : Window
         _viewModel = new MainViewModel();
         DataContext = _viewModel;
 
+        Closing += OnClosing;
         Loaded += OnLoaded;
         Closed += (_, _) =>
         {
             LayoutUpdated -= OnLayoutUpdated;
             _bottomTimer?.Stop();
+            _seewoBlocker?.Dispose();
+            _seewoBlocker = null;
+        };
+
+        // 设置窗口内切换“拦截希沃悬浮窗”开关时，实时同步拦截器启停
+        _viewModel.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(MainViewModel.BlockSeewoAssistantWindow))
+            {
+                if (_seewoBlocker != null)
+                    _seewoBlocker.Enabled = _viewModel.BlockSeewoAssistantWindow;
+            }
         };
     }
 
@@ -39,6 +57,60 @@ public partial class MainWindow : Window
         LayoutUpdated += OnLayoutUpdated;
         PositionWindowBottomRight();
         StartBottomMostMaintenance();
+        StartSeewoBlocker();
+    }
+
+    /// <summary>
+    /// 拦截窗口关闭（任务栏“关闭窗口”、Alt+F4 等）：弹出全屏 ContentDialog 确认，
+    /// 用户选择“退出”才真正关闭；选择“取消”则留在右下角继续运行。
+    /// </summary>
+    private async void OnClosing(object? sender, WindowClosingEventArgs e)
+    {
+        if (_allowClose)
+            return;
+
+        // 默认先阻止本次关闭，等待用户确认
+        e.Cancel = true;
+
+        // 已有模态子窗口（如设置窗口）在交互，或确认框已在显示：忽略本次关闭请求
+        if (_dialogCount > 0 || _isCloseConfirmShown)
+            return;
+
+        _isCloseConfirmShown = true;
+        try
+        {
+            var dialog = new FAContentDialog
+            {
+                Title = "退出快捷启动？",
+                Content = "关闭后快捷启动将停止运行，不再驻留屏幕右下角。确定要退出程序吗？",
+                PrimaryButtonText = "退出",
+                CloseButtonText = "取消",
+                DefaultButton = FAContentDialogButton.Close
+            };
+
+            var result = await dialog.ShowAsync(this);
+            if (result == FAContentDialogResult.Primary)
+            {
+                _allowClose = true;
+                Close();
+            }
+        }
+        finally
+        {
+            _isCloseConfirmShown = false;
+        }
+    }
+
+    /// <summary>按配置启动“拦截希沃服务助手右下角悬浮窗”。</summary>
+    private void StartSeewoBlocker()
+    {
+        if (!OperatingSystem.IsWindows())
+            return;
+
+        if (_seewoBlocker == null)
+            _seewoBlocker = new SeewoAssistantWindowBlocker(_viewModel.BlockSeewoAssistantWindow);
+        else
+            _seewoBlocker.Enabled = _viewModel.BlockSeewoAssistantWindow;
     }
 
     /// <summary>
@@ -92,8 +164,8 @@ public partial class MainWindow : Window
         };
         _bottomTimer.Tick += (_, _) =>
         {
-            // 窗口活动或有模态对话框打开时暂停，避免打断交互
-            if (!IsActive && _dialogCount == 0)
+            // 窗口活动、有模态对话框或退出确认框打开时暂停，避免打断交互或把遮罩层压到其它窗口之下
+            if (!IsActive && _dialogCount == 0 && !_isCloseConfirmShown)
             {
                 SendToBottom();
                 PositionWindowBottomRight();
@@ -166,9 +238,28 @@ public partial class MainWindow : Window
         _viewModel.ToggleEditModeCommand.Execute(null);
     }
 
-    private async void SettingsButton_Click(object? sender, RoutedEventArgs e)
+    private SettingsWindow? _settingsWindow;
+
+    private void SettingsButton_Click(object? sender, RoutedEventArgs e)
     {
-        await ShowSettingsDialog();
+        // 非模态打开设置窗口：主界面仍可点击，不被阻塞
+        if (_settingsWindow == null)
+        {
+            _settingsWindow = new SettingsWindow(_viewModel);
+            _settingsWindow.Closed += (_, _) => _settingsWindow = null;
+        }
+
+        if (!_settingsWindow.IsVisible)
+        {
+            _settingsWindow.Show();
+        }
+
+        // 若被最小化则先还原，再前置窗口
+        if (_settingsWindow.WindowState == WindowState.Minimized)
+        {
+            _settingsWindow.WindowState = WindowState.Normal;
+        }
+        _settingsWindow.Activate();
     }
 
     private async void QuickEntryEdit_Click(object? sender, RoutedEventArgs e)
@@ -219,76 +310,5 @@ public partial class MainWindow : Window
             _viewModel.XiwoApps.Add(newApp);
             _viewModel.SaveConfig();
         }
-    }
-
-    private async Task ShowSettingsDialog()
-    {
-        var dialog = new Window
-        {
-            Title = "设置",
-            Width = 340,
-            Height = 300,
-            CanResize = false,
-            WindowStartupLocation = WindowStartupLocation.CenterOwner
-        };
-
-        var panel = new StackPanel
-        {
-            Margin = new Thickness(20),
-            Spacing = 16
-        };
-
-        var title = new TextBlock
-        {
-            Text = "设置",
-            FontSize = 18,
-            FontWeight = FontWeight.Bold
-        };
-        panel.Children.Add(title);
-
-        // Auto-start toggle
-        var autoStartPanel = new DockPanel();
-        var autoStartText = new TextBlock
-        {
-            Text = "开机自启",
-            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center
-        };
-        DockPanel.SetDock(autoStartText, Dock.Left);
-        autoStartPanel.Children.Add(autoStartText);
-
-        var autoStartToggle = new ToggleSwitch
-        {
-            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right,
-            IsChecked = _viewModel.AutoStart
-        };
-        autoStartToggle.IsCheckedChanged += (s, e) =>
-        {
-            _viewModel.AutoStart = autoStartToggle.IsChecked == true;
-        };
-        autoStartPanel.Children.Add(autoStartToggle);
-        panel.Children.Add(autoStartPanel);
-
-        // Info text
-        var infoText = new TextBlock
-        {
-            Text = "使用提示：\n• 单击应用图标即可启动软件\n• 点击顶部按钮可管理应用\n• 窗口固定在屏幕右下角，始终保持置底\n• 配置文件保存在程序安装目录下的 config.json",
-            FontSize = 12,
-            Foreground = new SolidColorBrush(Color.Parse("#FF888888")),
-            TextWrapping = TextWrapping.Wrap
-        };
-        panel.Children.Add(infoText);
-
-        // Close button
-        var closeButton = new Button
-        {
-            Content = "关闭",
-            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch,
-            Margin = new Thickness(0, 8, 0, 0)
-        };
-        closeButton.Click += (s, e) => dialog.Close();
-        panel.Children.Add(closeButton);
-
-        dialog.Content = panel;
-        await ShowModalAsync(dialog);
     }
 }
