@@ -71,7 +71,7 @@ public class AppConfigService
                 },
                 new()
                 {
-                    Name = "Seerandom 点名",
+                    Name = "SecRandom 点名",
                     Path = "secrandom://window/main",
                     Category = "快捷入口",
                     IconPath = ""

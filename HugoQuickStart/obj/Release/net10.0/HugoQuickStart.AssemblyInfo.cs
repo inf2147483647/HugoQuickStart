@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("HugoQuickStart")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Release")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+77c2b2d1f76c7d355ecc772704a6ceee259ba85b")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+6c2151b7b7ee1110b7ffecc4f36780a72f3c0843")]
 [assembly: System.Reflection.AssemblyProductAttribute("HugoQuickStart")]
 [assembly: System.Reflection.AssemblyTitleAttribute("HugoQuickStart")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
