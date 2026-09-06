@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
 using System.Threading.Tasks;
+using Avalonia.Media.Imaging;
 using Avalonia.Threading;
 using HugoQuickStart.Models;
 using HugoQuickStart.Services;
@@ -23,6 +24,18 @@ public partial class MainViewModel : ObservableObject
     
     [ObservableProperty]
     private bool _isEditMode;
+
+    /// <summary>标题栏编辑按钮字形：编辑模式显示对勾（表示“完成编辑”），否则显示笔。</summary>
+    public string EditButtonGlyph => IsEditMode ? "\uE73E" : "\uE70F";
+
+    /// <summary>标题栏编辑按钮提示：编辑模式为“完成编辑”，否则为“编辑”。</summary>
+    public string EditButtonToolTip => IsEditMode ? "完成编辑" : "编辑";
+
+    partial void OnIsEditModeChanged(bool value)
+    {
+        OnPropertyChanged(nameof(EditButtonGlyph));
+        OnPropertyChanged(nameof(EditButtonToolTip));
+    }
     
     [ObservableProperty]
     private bool _autoStart;
@@ -39,6 +52,12 @@ public partial class MainViewModel : ObservableObject
     
     [ObservableProperty]
     private bool _hasStatus;
+
+    /// <summary>
+    /// 宿主窗口注入的协议导航提示回调：返回 true 表示用户确认继续启动。
+    /// 用于 classisland://、secrandom:// 等协议快捷入口启动前的提示。
+    /// </summary>
+    public Func<string, Task<bool>>? UrlNavigationPromptHost { get; set; }
 
     private DispatcherTimer? _statusTimer;
     private DispatcherTimer? _resolveTimer;
@@ -163,25 +182,54 @@ public partial class MainViewModel : ObservableObject
     }
 
     /// <summary>
-    /// 为所有还没有图标的条目在后台提取 EXE 真实图标。
-    /// 提取失败或路径无效的条目保持占位符。
+    /// 为所有还没有图标的条目补图：内置预设（IconKey）直接加载内嵌资源图标；
+    /// 其余条目在后台提取 EXE 真实图标。提取失败或路径无效的条目保持占位符。
     /// </summary>
     public async Task RefreshIconsAsync()
     {
         var pending = QuickEntries
             .Concat(XiwoApps)
-            .Where(item => item.Icon == null && !string.IsNullOrWhiteSpace(item.Path))
+            .Where(item => item.Icon == null &&
+                           (!string.IsNullOrWhiteSpace(item.Path) || !string.IsNullOrWhiteSpace(item.IconKey)))
             .ToList();
 
         foreach (var item in pending)
         {
-            var icon = await Task.Run(() => AppIconLoader.ExtractForPath(item.Path));
+            Bitmap? icon = null;
+
+            // 内置预设图标：直接加载嵌入资源，不依赖本机安装的 exe。
+            // 默认/历史的 classisland://、secrandom:// 项即使没有 IconKey 也按协议自动归类。
+            var iconKey = string.IsNullOrWhiteSpace(item.IconKey) ? GuessBuiltinKey(item.Path) : item.IconKey;
+            if (iconKey != null)
+            {
+                icon = AppIconLoader.LoadBuiltinIcon(iconKey);
+            }
+
+            if (icon == null && !string.IsNullOrWhiteSpace(item.Path))
+            {
+                icon = await Task.Run(() => AppIconLoader.ExtractForPath(item.Path));
+            }
+
             if (icon != null)
             {
                 // 回到 UI 线程更新，触发界面刷新
                 await Dispatcher.UIThread.InvokeAsync(() => item.Icon = icon);
             }
         }
+    }
+
+    /// <summary>
+    /// 按链接协议推测内置图标标识：classisland://、secrandom:// 分别对应同名内嵌图标，
+    /// 其它返回 null（走 exe 提取或占位符）。
+    /// </summary>
+    private static string? GuessBuiltinKey(string? path)
+    {
+        var cleaned = ProcessLauncher.CleanPath(path);
+        if (string.IsNullOrEmpty(cleaned) || !ProcessLauncher.IsUri(cleaned))
+            return null;
+
+        var scheme = cleaned[..cleaned.IndexOf("://", StringComparison.Ordinal)].ToLowerInvariant();
+        return scheme is "classisland" or "secrandom" ? scheme : null;
     }
 
     [RelayCommand]
@@ -204,12 +252,42 @@ public partial class MainViewModel : ObservableObject
         var launched = ProcessLauncher.Launch(app.Path, app.Arguments);
         if (launched)
         {
-            ShowStatus($"正在启动「{app.Name}」...");
+            // 协议快捷入口（classisland:// 等）不弹对话框、直接启动，
+            // 用底部黑色状态条提示确认已开启对应协议注册/导航（与普通应用启动提示一致）。
+            var hint = GetProtocolHint(app.Path);
+            ShowStatus(hint ?? $"正在启动「{app.Name}」...");
         }
         else
         {
             ShowStatus($"启动失败：「{app.Name}」路径无效，点击 ✎ 修改路径");
         }
+    }
+
+    /// <summary>
+    /// 需要"协议导航提示"的协议白名单（键为协议 scheme，值为底部黑色状态条提示文案）。
+    /// 协议链接点击后直接启动，同时显示该提示提醒确认对应程序已注册协议；
+    /// 无论内置默认条目还是用户自定义的同协议链接，均按此提示。
+    /// </summary>
+    private static readonly Dictionary<string, string> ProtocolHints = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["classisland"] = "请确保 ClassIsland 已开启 URL 导航",
+        ["secrandom"] = "请确保 SecRandom 已开启 URI 导航",
+        ["femboy"] = "请确保 FemboyTest 已开启 URI 注册"
+    };
+
+    /// <summary>
+    /// 按链接的协议 scheme 返回状态条提示文案；非白名单协议返回 null（走默认"正在启动"提示）。
+    /// 对自定义条目同样生效（只认协议，不认条目来源）。
+    /// </summary>
+    private static string? GetProtocolHint(string path)
+    {
+        // 先清洗可能包裹的外层引号/空白，再提取 scheme
+        var cleaned = ProcessLauncher.CleanPath(path);
+        if (string.IsNullOrEmpty(cleaned) || !ProcessLauncher.IsUri(cleaned))
+            return null;
+
+        var scheme = cleaned[..cleaned.IndexOf("://", StringComparison.Ordinal)];
+        return ProtocolHints.TryGetValue(scheme, out var hint) ? hint : null;
     }
 
     /// <summary>显示一条短暂的状态提示，数秒后自动消失。</summary>

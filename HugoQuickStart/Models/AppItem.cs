@@ -12,6 +12,7 @@ public class AppItem : INotifyPropertyChanged
     private string _category = string.Empty;
     private string _arguments = string.Empty;
     private string _matchKey = string.Empty;
+    private string _iconKey = string.Empty;
     private Bitmap? _icon;
 
     public string Name
@@ -52,6 +53,16 @@ public class AppItem : INotifyPropertyChanged
     {
         get => _matchKey;
         set { _matchKey = value; OnPropertyChanged(nameof(MatchKey)); }
+    }
+
+    /// <summary>
+    /// 内置预设图标标识（对应嵌入资源 Assets/presets/&lt;key&gt;.png）。
+    /// 非空时优先用该内置图标，不依赖本机安装的 exe。持久化到配置文件。
+    /// </summary>
+    public string IconKey
+    {
+        get => _iconKey;
+        set { _iconKey = value; OnPropertyChanged(nameof(IconKey)); }
     }
 
     /// <summary>从目标 exe/快捷方式提取的真实图标（不写入配置文件）。</summary>

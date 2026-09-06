@@ -8,11 +8,13 @@
         x:Class="HugoQuickStart.MainWindow"
         x:DataType="vm:MainViewModel"
         Title="快捷启动"
+        Icon="avares://HugoQuickStart/Assets/app.ico"
         Width="380"
         SizeToContent="Height"
         CanResize="False"
         WindowDecorations="None"
         WindowStartupLocation="Manual"
+        ShowInTaskbar="False"
         TransparencyLevelHint="Transparent"
         Background="Transparent"
         BorderThickness="0"
@@ -43,7 +45,7 @@
             BorderThickness="1">
         <Grid RowDefinitions="36,*,Auto">
             <!-- Title Bar -->
-            <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto,Auto"
+            <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto,Auto,Auto,Auto"
                   Background="Transparent"
                   x:Name="TitleBar">
                 <TextBlock Grid.Column="0"
@@ -54,26 +56,41 @@
                            Margin="16,0,0,0"
                            Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
 
-                <!-- Menu/Settings Button -->
+                <!-- Add Preset (edit mode only) -->
                 <Button Grid.Column="1"
+                        Content="添加预设"
+                        Classes="preset"
+                        IsVisible="{Binding IsEditMode}"
+                        Click="AddPreset_Click"
+                        ToolTip.Tip="添加内置预设到快捷入口或希沃软件"/>
+
+                <!-- Menu/Settings Button -->
+                <Button Grid.Column="2"
                         Content="&#xE713;"
                         Classes="icon"
                         Click="SettingsButton_Click"
                         ToolTip.Tip="设置"/>
 
                 <!-- Edit Button -->
-                <Button Grid.Column="2"
-                        Content="&#xE70F;"
+                <Button Grid.Column="3"
+                        Content="{Binding EditButtonGlyph}"
                         Classes="icon"
                         Click="EditButton_Click"
-                        ToolTip.Tip="编辑"/>
+                        ToolTip.Tip="{Binding EditButtonToolTip}"/>
 
                 <!-- Minimize Button -->
-                <Button Grid.Column="3"
+                <Button Grid.Column="4"
                         Content="&#xE921;"
                         Classes="icon"
                         Click="MinimizeButton_Click"
                         ToolTip.Tip="最小化"/>
+
+                <!-- Shutdown Button -->
+                <Button Grid.Column="5"
+                        Content="&#xE7E8;"
+                        Classes="icon"
+                        Click="ShutdownButton_Click"
+                        ToolTip.Tip="退出程序"/>
             </Grid>
 
             <!-- Content -->
@@ -338,6 +355,21 @@
         </Style>
         <Style Selector="Button.icon:pointerover">
             <Setter Property="Background" Value="{DynamicResource SubtleFillColorTertiaryBrush}"/>
+        </Style>
+        <!-- 标题栏“添加预设”文字按钮：自适应宽度 + 主题强调色背景 -->
+        <Style Selector="Button.preset">
+            <Setter Property="Height" Value="28"/>
+            <Setter Property="Padding" Value="10,0"/>
+            <Setter Property="CornerRadius" Value="6"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Background" Value="{DynamicResource AccentFillColorDefaultBrush}"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="Margin" Value="4,0,2,0"/>
+        </Style>
+        <Style Selector="Button.preset:pointerover">
+            <Setter Property="Background" Value="{DynamicResource AccentFillColorSecondaryBrush}"/>
         </Style>
         <Style Selector="Button.hyper">
             <Setter Property="Background" Value="Transparent"/>

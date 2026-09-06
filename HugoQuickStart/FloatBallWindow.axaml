@@ -1,0 +1,49 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="HugoQuickStart.FloatBallWindow"
+        Width="52"
+        Height="52"
+        CanResize="False"
+        ShowInTaskbar="False"
+        Topmost="True"
+        WindowDecorations="None"
+        WindowStartupLocation="Manual"
+        TransparencyLevelHint="Transparent"
+        Background="Transparent"
+        BorderThickness="0">
+
+    <Window.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.ThemeDictionaries>
+                <ResourceDictionary x:Key="Light">
+                    <SolidColorBrush x:Key="BallBackgroundBrush" Color="#EEFFFFFF"/>
+                    <SolidColorBrush x:Key="BallBorderBrush" Color="#22000000"/>
+                    <SolidColorBrush x:Key="BallHoverBrush" Color="#FFFFFFFF"/>
+                </ResourceDictionary>
+                <ResourceDictionary x:Key="Dark">
+                    <SolidColorBrush x:Key="BallBackgroundBrush" Color="#EE1F1F1F"/>
+                    <SolidColorBrush x:Key="BallBorderBrush" Color="#33FFFFFF"/>
+                    <SolidColorBrush x:Key="BallHoverBrush" Color="#FF2E2E2E"/>
+                </ResourceDictionary>
+            </ResourceDictionary.ThemeDictionaries>
+        </ResourceDictionary>
+    </Window.Resources>
+
+    <Button Width="52"
+            Height="52"
+            Padding="0"
+            CornerRadius="26"
+            Background="{DynamicResource BallBackgroundBrush}"
+            BorderBrush="{DynamicResource BallBorderBrush}"
+            BorderThickness="1"
+            HorizontalAlignment="Center"
+            VerticalAlignment="Center"
+            Cursor="Hand"
+            Click="Ball_Click">
+        <Image Source="avares://HugoQuickStart/Assets/app.png"
+               Stretch="Uniform"
+               Margin="7"
+               HorizontalAlignment="Center"
+               VerticalAlignment="Center"/>
+    </Button>
+</Window>

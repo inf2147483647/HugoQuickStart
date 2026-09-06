@@ -1,10 +1,12 @@
 using System;
+using System.Linq;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Media;
+using Avalonia.Platform;
 using Avalonia.Threading;
 using FluentAvalonia.UI.Controls;
 using HugoQuickStart.Models;
@@ -23,6 +25,8 @@ public partial class MainWindow : Window
     private bool _isCloseConfirmShown;
     private Size _lastSize = new Size();
     private SeewoAssistantWindowBlocker? _seewoBlocker;
+    private TrayIcon? _trayIcon;
+    private FloatBallWindow? _floatBallWindow;
 
     public MainWindow()
     {
@@ -38,7 +42,13 @@ public partial class MainWindow : Window
             _bottomTimer?.Stop();
             _seewoBlocker?.Dispose();
             _seewoBlocker = null;
+            _trayIcon?.Dispose();
+            _trayIcon = null;
+            _floatBallWindow?.Close();
+            _floatBallWindow = null;
         };
+
+        InitializeTrayIcon();
 
         // 设置窗口内切换“拦截希沃悬浮窗”开关时，实时同步拦截器启停
         _viewModel.PropertyChanged += (_, e) =>
@@ -230,7 +240,124 @@ public partial class MainWindow : Window
 
     private void MinimizeButton_Click(object? sender, RoutedEventArgs e)
     {
-        WindowState = WindowState.Minimized;
+        HideWindowToTray();
+    }
+
+    /// <summary>标题栏“关机”按钮：退出程序（复用统一退出流程，含确认对话框）。</summary>
+    private void ShutdownButton_Click(object? sender, RoutedEventArgs e)
+    {
+        ExitProgram();
+    }
+
+    /// <summary>初始化系统托盘图标：窗口隐藏时仍在任务栏通知区驻留，左键点击还原主界面。</summary>
+    private void InitializeTrayIcon()
+    {
+        try
+        {
+            _trayIcon = new TrayIcon
+            {
+                Icon = new WindowIcon(AssetLoader.Open(new Uri("avares://HugoQuickStart/Assets/app.ico"))),
+                ToolTipText = "快捷启动",
+                IsVisible = true
+            };
+
+            var menu = new NativeMenu();
+            var showItem = new NativeMenuItem("显示主界面");
+            showItem.Click += (_, _) => RestoreMainWindow();
+            var exitItem = new NativeMenuItem("退出");
+            exitItem.Click += (_, _) => ExitProgram();
+            menu.Items.Add(showItem);
+            menu.Items.Add(new NativeMenuItemSeparator());
+            menu.Items.Add(exitItem);
+            _trayIcon.Menu = menu;
+
+            // 左键单击托盘图标同样还原主界面
+            _trayIcon.Clicked += (_, _) => RestoreMainWindow();
+
+            if (Application.Current is not null)
+                TrayIcon.SetIcons(Application.Current, new TrayIcons { _trayIcon });
+        }
+        catch
+        {
+            // 托盘初始化失败不阻塞主界面正常运行
+            _trayIcon?.Dispose();
+            _trayIcon = null;
+        }
+    }
+
+    /// <summary>还原并前置主界面，隐藏悬浮球。</summary>
+    private void RestoreMainWindow()
+    {
+        Show();
+        if (WindowState == WindowState.Minimized)
+            WindowState = WindowState.Normal;
+        PositionWindowBottomRight();
+        HideFloatBall();
+        Activate();
+    }
+
+    /// <summary>最小化到托盘：隐藏主窗口并显示右下角悬浮球。</summary>
+    private void HideWindowToTray()
+    {
+        Hide();
+        ShowFloatBall();
+    }
+
+    /// <summary>显示右下角悬浮球并锚定位置。</summary>
+    private void ShowFloatBall()
+    {
+        if (_floatBallWindow == null)
+        {
+            _floatBallWindow = new FloatBallWindow();
+            _floatBallWindow.Clicked += RestoreMainWindow;
+            _floatBallWindow.Closed += (_, _) => _floatBallWindow = null;
+        }
+
+        PositionFloatBall();
+        _floatBallWindow.Show();
+        _floatBallWindow.Activate();
+    }
+
+    /// <summary>隐藏悬浮球（还原主界面或退出时调用）。</summary>
+    private void HideFloatBall()
+    {
+        _floatBallWindow?.Hide();
+    }
+
+    /// <summary>将悬浮球锚定到屏幕工作区右下角。</summary>
+    private void PositionFloatBall()
+    {
+        if (_floatBallWindow == null)
+            return;
+
+        var screen = Screens.ScreenFromWindow(this) ?? Screens.Primary;
+        if (screen == null)
+            return;
+
+        var workingArea = screen.WorkingArea;
+        var scale = screen.Scaling;
+        var width = _floatBallWindow.Width;
+        var height = _floatBallWindow.Height;
+
+        var x = workingArea.X + workingArea.Width - (int)(width * scale) - (int)(20 * scale);
+        var y = workingArea.Y + workingArea.Height - (int)(height * scale) - (int)(20 * scale);
+
+        _floatBallWindow.Position = new PixelPoint(x, y);
+    }
+
+    /// <summary>统一退出路径：若主窗被隐藏则先还原以让确认对话框有可见宿主，再走关闭确认流程。</summary>
+    private void ExitProgram()
+    {
+        if (!IsVisible)
+        {
+            Show();
+            if (WindowState == WindowState.Minimized)
+                WindowState = WindowState.Normal;
+            PositionWindowBottomRight();
+        }
+
+        HideFloatBall();
+        Close();
     }
 
     private void EditButton_Click(object? sender, RoutedEventArgs e)
@@ -239,6 +366,31 @@ public partial class MainWindow : Window
     }
 
     private SettingsWindow? _settingsWindow;
+
+    /// <summary>编辑模式下弹出"添加预设"选择窗口，把选中的内置预设加入对应列表。</summary>
+    private async void AddPreset_Click(object? sender, RoutedEventArgs e)
+    {
+        var dialog = new PickPresetDialog();
+        var ok = await ShowModalAsync<bool>(dialog);
+        if (ok != true)
+            return;
+        if (dialog.SelectedPreset is not AppItem preset)
+            return;
+
+        var target = preset.Category == AppPresets.CategoryXiwo
+            ? _viewModel.XiwoApps
+            : _viewModel.QuickEntries;
+
+        if (target.Any(x => string.Equals(x.Path, preset.Path, StringComparison.OrdinalIgnoreCase)))
+        {
+            _viewModel.ShowStatus($"「{preset.Name}」已存在，未重复添加");
+            return;
+        }
+
+        target.Add(preset);
+        _viewModel.SaveConfig();
+        _viewModel.ShowStatus($"已添加「{preset.Name}」");
+    }
 
     private void SettingsButton_Click(object? sender, RoutedEventArgs e)
     {
