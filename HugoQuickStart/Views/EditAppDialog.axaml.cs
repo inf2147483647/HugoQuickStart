@@ -172,7 +172,7 @@ public partial class EditAppDialog : Window
             Margin = new Thickness(0, 4, 0, 0)
         };
         var addFallbackButton = new Button { Content = "+ 添加备选" };
-        addFallbackButton.Click += (_, _) => AddFallbackRow("");
+        addFallbackButton.Click += (_, _) => AddFallbackRow(new LaunchCandidate());
         addFallbackRowPanel.Children.Add(addFallbackButton);
         addFallbackRowPanel.Children.Add(new TextBlock
         {
@@ -254,10 +254,17 @@ public partial class EditAppDialog : Window
         _customIconRow.IsVisible = mode == IconSourceMode.Custom;
     }
 
-    /// <summary>新增一行备选路径（文本框 + 浏览 + 删除备选）。</summary>
-    private void AddFallbackRow(string initialPath)
+    /// <summary>新增一行备选（第一行：路径 + 浏览 + 删除；第二行：该路径专属参数）。</summary>
+    private void AddFallbackRow(LaunchCandidate candidate)
     {
-        var row = new DockPanel { Tag = "fallback" };
+        var row = new StackPanel
+        {
+            Spacing = 2,
+            Tag = "fallback"
+        };
+
+        // ---- 第一行：路径 + 浏览 + 删除 ----
+        var pathLine = new DockPanel();
 
         var deleteButton = new Button
         {
@@ -267,7 +274,7 @@ public partial class EditAppDialog : Window
         };
         DockPanel.SetDock(deleteButton, Dock.Right);
         deleteButton.Click += (_, _) => _fallbackPanel.Children.Remove(row);
-        row.Children.Add(deleteButton);
+        pathLine.Children.Add(deleteButton);
 
         var browseButton = new Button
         {
@@ -276,42 +283,57 @@ public partial class EditAppDialog : Window
             Margin = new Thickness(6, 0, 0, 0)
         };
         DockPanel.SetDock(browseButton, Dock.Right);
-        row.Children.Add(browseButton);
+        pathLine.Children.Add(browseButton);
 
-        var textBox = new TextBox
+        var pathBox = new TextBox
         {
-            Text = initialPath,
+            Text = candidate.Path,
             PlaceholderText = "备选文件路径或URI"
         };
         browseButton.Click += async (_, _) =>
         {
             var picked = await PickExeFileAsync();
             if (!string.IsNullOrEmpty(picked))
-                textBox.Text = picked;
+                pathBox.Text = picked;
         };
-        row.Children.Add(textBox);
+        pathLine.Children.Add(pathBox);
+        row.Children.Add(pathLine);
+
+        // ---- 第二行：该备选专属启动参数 ----
+        row.Children.Add(new TextBox
+        {
+            Text = candidate.Arguments,
+            PlaceholderText = "该备选的启动参数（可选，留空则用下方全局参数）",
+            FontSize = 12
+        });
 
         _fallbackPanel.Children.Add(row);
     }
 
-    /// <summary>收集所有非空的备选路径。</summary>
-    private List<string> CollectFallbackPaths()
+    /// <summary>收集所有路径非空的备选启动项（含各自参数，按路径去重）。</summary>
+    private List<LaunchCandidate> CollectFallbackPaths()
     {
-        var result = new List<string>();
+        var result = new List<LaunchCandidate>();
         foreach (var child in _fallbackPanel.Children)
         {
-            if (child is not DockPanel row)
+            if (child is not StackPanel row || row.Tag is not "fallback" || row.Children.Count == 0)
                 continue;
 
-            // 每行唯一的 TextBox 即备选路径输入框
-            var tb = row.Children.OfType<TextBox>().FirstOrDefault();
-            if (tb == null)
+            if (row.Children[0] is not DockPanel pathLine)
                 continue;
 
-            var value = ProcessLauncher.CleanPath(tb.Text);
-            if (!string.IsNullOrWhiteSpace(value) &&
-                !result.Contains(value, StringComparer.OrdinalIgnoreCase))
-                result.Add(value);
+            // 第一行唯一的 TextBox 即路径框；第二行是参数框
+            var pathTb = pathLine.Children.OfType<TextBox>().FirstOrDefault();
+            var argsTb = row.Children.OfType<TextBox>().Skip(1).FirstOrDefault();
+            if (pathTb == null)
+                continue;
+
+            var value = ProcessLauncher.CleanPath(pathTb.Text);
+            if (string.IsNullOrWhiteSpace(value) ||
+                result.Exists(c => string.Equals(c.Path, value, StringComparison.OrdinalIgnoreCase)))
+                continue;
+
+            result.Add(new LaunchCandidate(value, argsTb?.Text?.Trim() ?? string.Empty));
         }
         return result;
     }

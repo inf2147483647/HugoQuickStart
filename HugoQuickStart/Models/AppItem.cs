@@ -1,5 +1,7 @@
+using System;
 using System.Collections.Generic;
 using System.ComponentModel;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 using Avalonia.Media.Imaging;
 
@@ -16,6 +18,54 @@ public enum IconSourceMode
     Custom
 }
 
+/// <summary>
+/// 备选启动项：一个路径/URI + 该路径专属的启动参数。
+/// JSON 兼容规则：旧配置为字符串数组（仅路径，参数为空）；
+/// 新配置写为 {"path":"...","arguments":"..."} 对象数组。
+/// </summary>
+[JsonConverter(typeof(LaunchCandidateConverter))]
+public class LaunchCandidate
+{
+    public string Path { get; set; } = string.Empty;
+    public string Arguments { get; set; } = string.Empty;
+
+    public LaunchCandidate()
+    {
+    }
+
+    public LaunchCandidate(string path, string arguments = "")
+    {
+        Path = path;
+        Arguments = arguments;
+    }
+}
+
+internal class LaunchCandidateConverter : JsonConverter<LaunchCandidate>
+{
+    public override LaunchCandidate? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        // 旧格式：纯字符串 = 只有路径、无参数
+        if (reader.TokenType == JsonTokenType.String)
+            return new LaunchCandidate(reader.GetString() ?? string.Empty);
+
+        var candidate = new LaunchCandidate();
+        using var doc = JsonDocument.ParseValue(ref reader);
+        if (doc.RootElement.TryGetProperty("path", out var pathEl))
+            candidate.Path = pathEl.GetString() ?? string.Empty;
+        if (doc.RootElement.TryGetProperty("arguments", out var argsEl))
+            candidate.Arguments = argsEl.GetString() ?? string.Empty;
+        return candidate;
+    }
+
+    public override void Write(Utf8JsonWriter writer, LaunchCandidate value, JsonSerializerOptions options)
+    {
+        writer.WriteStartObject();
+        writer.WriteString("path", value.Path);
+        writer.WriteString("arguments", value.Arguments);
+        writer.WriteEndObject();
+    }
+}
+
 public class AppItem : INotifyPropertyChanged
 {
     private string _name = string.Empty;
@@ -26,7 +76,7 @@ public class AppItem : INotifyPropertyChanged
     private string _matchKey = string.Empty;
     private string _iconKey = string.Empty;
     private string _iconMode = nameof(IconSourceMode.Auto);
-    private List<string> _fallbackPaths = new();
+    private List<LaunchCandidate> _fallbackPaths = new();
     private Bitmap? _icon;
 
     public string Name
@@ -90,13 +140,13 @@ public class AppItem : INotifyPropertyChanged
     }
 
     /// <summary>
-    /// 备选启动路径/URI 列表。主路径启动失败时按顺序自动尝试，全部失败才提示。
-    /// 持久化到配置文件。
+    /// 备选启动项列表（每项含路径 + 该路径专属参数）。主路径启动失败时按顺序自动尝试，全部失败才提示。
+    /// 持久化到配置文件（兼容旧的纯字符串数组格式）。
     /// </summary>
-    public List<string> FallbackPaths
+    public List<LaunchCandidate> FallbackPaths
     {
         get => _fallbackPaths;
-        set { _fallbackPaths = value ?? new List<string>(); OnPropertyChanged(nameof(FallbackPaths)); }
+        set { _fallbackPaths = value ?? new List<LaunchCandidate>(); OnPropertyChanged(nameof(FallbackPaths)); }
     }
 
     /// <summary>从目标 exe/快捷方式提取的真实图标（不写入配置文件）。</summary>

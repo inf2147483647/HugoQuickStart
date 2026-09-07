@@ -321,25 +321,30 @@ public partial class MainViewModel : ObservableObject
             return;
         }
 
-        // 支持绝对路径与相对安装目录的相对路径；主路径失败时按顺序尝试备选路径
-        var candidates = new List<string>();
-        if (!string.IsNullOrWhiteSpace(app.Path))
-            candidates.Add(app.Path);
+        // 支持绝对路径与相对安装目录的相对路径；主路径失败时按顺序尝试备选路径。
+        // 参数跟随路径：每个备选用各自的参数；备选参数留空时沿用全局"启动参数"（兼容旧配置行为）。
+        var candidates = new List<LaunchCandidate>
+        {
+            new(app.Path, app.Arguments)
+        };
         foreach (var fb in app.FallbackPaths)
         {
-            if (!string.IsNullOrWhiteSpace(fb) && !candidates.Contains(fb, StringComparer.OrdinalIgnoreCase))
+            if (string.IsNullOrWhiteSpace(fb.Path))
+                continue;
+            if (!candidates.Exists(c => string.Equals(c.Path, fb.Path, StringComparison.OrdinalIgnoreCase)))
                 candidates.Add(fb);
         }
 
         foreach (var candidate in candidates)
         {
-            if (!ProcessLauncher.Launch(candidate, app.Arguments))
+            var args = string.IsNullOrEmpty(candidate.Arguments) ? app.Arguments : candidate.Arguments;
+            if (!ProcessLauncher.Launch(candidate.Path, args))
                 continue;
 
             // 协议快捷入口（classisland:// 等）不弹对话框、直接启动，
             // 用底部黑色状态条提示确认已开启对应协议注册/导航（与普通应用启动提示一致）。
-            var hint = GetProtocolHint(candidate);
-            var usedFallback = !string.Equals(candidate, app.Path, StringComparison.OrdinalIgnoreCase);
+            var hint = GetProtocolHint(candidate.Path);
+            var usedFallback = !string.Equals(candidate.Path, app.Path, StringComparison.OrdinalIgnoreCase);
             var suffix = usedFallback ? "（已使用备选路径）" : string.Empty;
             ShowStatus(hint ?? $"正在启动「{app.Name}」...{suffix}");
             return;
