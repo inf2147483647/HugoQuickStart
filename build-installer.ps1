@@ -64,8 +64,16 @@ if (-not $NoPublish) {
     }
     # 清空旧发布产物，避免残留过时文件
     if (Test-Path $pubDir) { Get-ChildItem $pubDir -Force | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue }
-    dotnet publish $proj -c Release -r win-x64 --self-contained true -p:PublishTrimmed=false --nologo -v minimal -o $pubDir
+    # DebugType=none：不生成 PDB（libSkiaSharp.pdb 等约 100MB，安装包无用的调试符号）
+    dotnet publish $proj -c Release -r win-x64 --self-contained true -p:PublishTrimmed=false -p:DebugType=none -p:DebugSymbols=false --nologo -v minimal -o $pubDir
     if ($LASTEXITCODE -ne 0) { throw "发布失败（退出码 $LASTEXITCODE）。" }
+    # 兜底：清除所有 .pdb（含 NuGet 原生包带来的 libSkiaSharp.pdb 等，约 100MB）
+    $pdbs = Get-ChildItem $pubDir -Recurse -Filter *.pdb -File -ErrorAction SilentlyContinue
+    if ($pdbs) {
+        $savedMB = [math]::Round((($pdbs | Measure-Object Length -Sum).Sum / 1MB), 1)
+        $pdbs | Remove-Item -Force
+        Write-Host ("已删除 {0} 个 .pdb 文件，减少 {1} MB" -f $pdbs.Count, $savedMB) -ForegroundColor Yellow
+    }
 } else {
     Write-Host "---- 已跳过发布步 (NoPublish) ----" -ForegroundColor Gray
     if (-not (Test-Path $pubDir)) { throw "publish\ 不存在且已跳过发布，无法打安装包。" }

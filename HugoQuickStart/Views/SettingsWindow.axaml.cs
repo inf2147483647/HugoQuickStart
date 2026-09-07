@@ -4,6 +4,7 @@ using System.IO;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using HugoQuickStart.Behaviors;
+using HugoQuickStart.Services;
 using HugoQuickStart.ViewModels;
 
 namespace HugoQuickStart.Views;
@@ -130,12 +131,13 @@ public partial class SettingsWindow : Window
         StackPanelIntroAnimationBehavior.Play(panel);
     }
 
-    /// <summary>打开程序安装目录（配置文件 config.json 所在目录）。</summary>
+    /// <summary>打开配置目录（config.json 所在目录，位于 %APPDATA%，升级不受影响）。</summary>
     private void OpenAppDirectory_OnClick(object? sender, RoutedEventArgs e)
     {
         try
         {
-            var dir = AppContext.BaseDirectory;
+            var dir = AppConfigService.ConfigDirectory;
+            Directory.CreateDirectory(dir);
             if (Directory.Exists(dir))
             {
                 Process.Start(new ProcessStartInfo

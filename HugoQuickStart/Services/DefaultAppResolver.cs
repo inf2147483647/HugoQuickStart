@@ -13,6 +13,7 @@ public static class DefaultAppResolver
     // 匹配键常量
     public const string KeyEasiNote = "seewo.easinote";    // 希沃白板5
     public const string KeyEasiCamera = "seewo.easicamera"; // 希沃视频展台
+    public const string KeyEasiNote5C = "seewo.easinote5c"; // 希沃轻白板
     public const string KeyMinecraft = "minecraft";         // Minecraft
     public const string KeyVrchat = "vrchat";               // VRChat (Steam)
 
@@ -28,6 +29,10 @@ public static class DefaultAppResolver
                 return ResolveSeewo("希沃白板", "EasiNote", "EasiNote.exe");
             case KeyEasiCamera:
                 return ResolveSeewo("希沃视频展台", "EasiCamera", "EasiCamera.exe");
+            case KeyEasiNote5C:
+                // 轻白板安装目录 EasiNote5C，启动器与白板5同为 swenlauncher.exe
+                return ResolveSeewo("希沃轻白板", "EasiNote5C", "swenlauncher.exe")
+                    ?? ResolveSeewo("轻白板", "EasiNote5C", "EasiNote5C.exe");
             case KeyMinecraft:
                 return ResolveByDisplayName("Minecraft");
             case KeyVrchat:
@@ -46,6 +51,8 @@ public static class DefaultAppResolver
         if (string.IsNullOrWhiteSpace(name))
             return string.Empty;
 
+        if (Contains(name, "希沃轻白板") || Contains(name, "轻白板"))
+            return KeyEasiNote5C;
         if (Contains(name, "希沃白板"))
             return KeyEasiNote;
         if (Contains(name, "希沃视频展台") || Contains(name, "视频展台"))

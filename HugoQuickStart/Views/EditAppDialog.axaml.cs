@@ -19,6 +19,7 @@ public partial class EditAppDialog : Window
     private TextBox _nameTextBox = null!;
     private TextBox _pathTextBox = null!;
     private TextBox _argsTextBox = null!;
+    private TextBox _remarkTextBox = null!;
     private ComboBox _iconModeCombo = null!;
     private ComboBox _presetIconCombo = null!;
     private DockPanel _customIconRow = null!;
@@ -195,6 +196,20 @@ public partial class EditAppDialog : Window
         argsPanel.Children.Add(_argsTextBox);
         panel.Children.Add(argsPanel);
 
+        // ---- 备注 ----
+        var remarkPanel = new StackPanel { Spacing = 4 };
+        remarkPanel.Children.Add(new TextBlock { Text = "备注（可选）", FontSize = 12 });
+        _remarkTextBox = new TextBox
+        {
+            PlaceholderText = "悬停提示内容；留空则悬停显示程序绝对路径（需在设置中开启图标悬浮提示）",
+            Margin = new Thickness(0, 4, 0, 0),
+            TextWrapping = TextWrapping.Wrap,
+            AcceptsReturn = true,
+            MinHeight = 0
+        };
+        remarkPanel.Children.Add(_remarkTextBox);
+        panel.Children.Add(remarkPanel);
+
         // ---- Buttons ----
         var buttonPanel = new StackPanel
         {
@@ -222,6 +237,7 @@ public partial class EditAppDialog : Window
         _nameTextBox.Text = AppItem.Name;
         _pathTextBox.Text = AppItem.Path;
         _argsTextBox.Text = AppItem.Arguments;
+        _remarkTextBox.Text = AppItem.Remark;
 
         var mode = Enum.TryParse<IconSourceMode>(AppItem.IconMode, ignoreCase: true, out var parsed)
             ? parsed : IconSourceMode.Auto;
@@ -349,6 +365,7 @@ public partial class EditAppDialog : Window
         AppItem.Name = _nameTextBox.Text?.Trim() ?? string.Empty;
         AppItem.Path = ProcessLauncher.CleanPath(_pathTextBox.Text) ?? string.Empty;
         AppItem.Arguments = _argsTextBox.Text?.Trim() ?? string.Empty;
+        AppItem.Remark = _remarkTextBox.Text?.Trim() ?? string.Empty;
         AppItem.FallbackPaths = CollectFallbackPaths();
 
         var mode = (IconSourceMode)Math.Max(0, _iconModeCombo.SelectedIndex);

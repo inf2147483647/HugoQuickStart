@@ -17,6 +17,9 @@ public class AppConfig
 
     /// <summary>界面缩放：控制主界面总体大小，0.80–1.50，默认 1.00。持久化到配置文件。</summary>
     public double UiScale { get; set; } = 1.0;
+
+    /// <summary>图标悬浮提示：悬停显示备注（备注为空则显示 exe 绝对路径）。默认关闭。持久化到配置文件。</summary>
+    public bool ShowIconToolTips { get; set; } = false;
     public double WindowWidth { get; set; } = 380;
     public double WindowHeight { get; set; } = 500;
     public int MarginRight { get; set; } = 20;

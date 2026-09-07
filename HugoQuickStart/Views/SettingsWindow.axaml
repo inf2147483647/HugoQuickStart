@@ -261,6 +261,36 @@
                                     HorizontalAlignment="Stretch"/>
                         </StackPanel>
                     </Border>
+
+                    <!-- 图标悬浮提示 -->
+                    <Border Padding="16,12"
+                            CornerRadius="8"
+                            Background="{DynamicResource SubtleFillColorTertiaryBrush}">
+                        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="14">
+                            <Border Width="36" Height="36" CornerRadius="8"
+                                    Background="{DynamicResource SubtleFillColorSecondaryBrush}">
+                                <TextBlock Text="&#xE9D9;"
+                                           FontFamily="Segoe MDL2 Assets, Segoe UI Symbol"
+                                           FontSize="16"
+                                           HorizontalAlignment="Center"
+                                           VerticalAlignment="Center"
+                                           Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+                            </Border>
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                                <TextBlock Text="图标悬浮提示"
+                                           FontSize="14"
+                                           FontWeight="SemiBold"
+                                           Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+                                <TextBlock Text="鼠标悬停在应用图标上时显示悬浮文本：优先显示该应用的备注，备注为空则显示程序绝对路径。"
+                                           FontSize="12"
+                                           TextWrapping="Wrap"
+                                           Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+                            </StackPanel>
+                            <ToggleSwitch Grid.Column="2"
+                                          IsChecked="{Binding ShowIconToolTips}"
+                                          VerticalAlignment="Center"/>
+                        </Grid>
+                    </Border>
                 </StackPanel>
             </ScrollViewer>
 

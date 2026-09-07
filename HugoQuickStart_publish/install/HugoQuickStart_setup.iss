@@ -18,7 +18,7 @@ PrivilegesRequired=lowest
 OutputDir=..\dist
 OutputBaseFilename=HugoQuickStart_setup
 UninstallDisplayName={#AppName}
-Compression=lzma2
+Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern
 VersionInfoVersion=1.0.0.0
@@ -47,7 +47,7 @@ Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; \
     ValueData: """{app}\HugoQuickStart.exe"""; Flags: uninsdeletevalue; Tasks: autostart
 
 [Files]
-Source: "{#PublishDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#PublishDir}\*"; DestDir: "{app}"; Excludes: "*.pdb"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 Name: "{group}\{#AppName}"; Filename: "{app}\{#AppExe}"

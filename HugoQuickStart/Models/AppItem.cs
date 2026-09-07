@@ -68,6 +68,9 @@ internal class LaunchCandidateConverter : JsonConverter<LaunchCandidate>
 
 public class AppItem : INotifyPropertyChanged
 {
+    /// <summary>全局开关（来自设置-外观"图标悬浮提示"，默认关闭）。变更时由 MainViewModel 统一刷新各条目的 ToolTipText。</summary>
+    public static bool ToolTipsEnabled = false;
+
     private string _name = string.Empty;
     private string _path = string.Empty;
     private string _iconPath = string.Empty;
@@ -75,6 +78,7 @@ public class AppItem : INotifyPropertyChanged
     private string _arguments = string.Empty;
     private string _matchKey = string.Empty;
     private string _iconKey = string.Empty;
+    private string _remark = string.Empty;
     private string _iconMode = nameof(IconSourceMode.Auto);
     private List<LaunchCandidate> _fallbackPaths = new();
     private Bitmap? _icon;
@@ -88,7 +92,7 @@ public class AppItem : INotifyPropertyChanged
     public string Path
     {
         get => _path;
-        set { _path = value; OnPropertyChanged(nameof(Path)); }
+        set { _path = value; OnPropertyChanged(nameof(Path)); OnPropertyChanged(nameof(ToolTipText)); }
     }
 
     public string IconPath
@@ -140,6 +144,15 @@ public class AppItem : INotifyPropertyChanged
     }
 
     /// <summary>
+    /// 备注：鼠标悬停时优先显示的悬浮文本。持久化到配置文件。
+    /// </summary>
+    public string Remark
+    {
+        get => _remark;
+        set { _remark = value; OnPropertyChanged(nameof(Remark)); OnPropertyChanged(nameof(ToolTipText)); }
+    }
+
+    /// <summary>
     /// 备选启动项列表（每项含路径 + 该路径专属参数）。主路径启动失败时按顺序自动尝试，全部失败才提示。
     /// 持久化到配置文件（兼容旧的纯字符串数组格式）。
     /// </summary>
@@ -148,6 +161,31 @@ public class AppItem : INotifyPropertyChanged
         get => _fallbackPaths;
         set { _fallbackPaths = value ?? new List<LaunchCandidate>(); OnPropertyChanged(nameof(FallbackPaths)); }
     }
+
+    /// <summary>
+    /// 悬浮提示文本（仅当设置中开启"图标悬浮提示"时生效）：
+    /// 备注非空 → 备注内容；否则 → 解析后的 exe 绝对路径（URI 协议原样显示）。
+    /// </summary>
+    [JsonIgnore]
+    public string? ToolTipText => ToolTipsEnabled ? BuildToolTipText() : null;
+
+    private string? BuildToolTipText()
+    {
+        if (!string.IsNullOrWhiteSpace(_remark))
+            return _remark.Trim();
+
+        var cleaned = Services.ProcessLauncher.CleanPath(_path);
+        if (string.IsNullOrWhiteSpace(cleaned))
+            return null;
+
+        if (Services.ProcessLauncher.IsUri(cleaned))
+            return cleaned;
+
+        return Services.ProcessLauncher.ResolvePath(cleaned) ?? cleaned;
+    }
+
+    /// <summary>全局开关变更后调用，通知悬浮文本重新求值。</summary>
+    public void RefreshToolTip() => OnPropertyChanged(nameof(ToolTipText));
 
     /// <summary>从目标 exe/快捷方式提取的真实图标（不写入配置文件）。</summary>
     [JsonIgnore]

@@ -52,6 +52,19 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty]
     private double _uiScale = 1.0;
 
+    /// <summary>图标悬浮提示开关：悬停显示备注（为空则显示 exe 绝对路径）。默认关闭。</summary>
+    [ObservableProperty]
+    private bool _showIconToolTips = false;
+
+    partial void OnShowIconToolTipsChanged(bool value)
+    {
+        AppItem.ToolTipsEnabled = value;
+        foreach (var item in QuickEntries.Concat(XiwoApps))
+            item.RefreshToolTip();
+        if (!_suppressThemeSave)
+            SaveSettingsOnly();
+    }
+
     partial void OnUiScaleChanged(double value)
     {
         // 钳制到合法范围，并按 0.05 步长取整（滑条 snap 之外的入口兜底）
@@ -205,6 +218,7 @@ public partial class MainViewModel : ObservableObject
         _suppressThemeSave = true;
         ThemeMode = string.IsNullOrWhiteSpace(config.ThemeMode) ? "System" : config.ThemeMode;
         UiScale = Math.Clamp(config.UiScale <= 0 ? 1.0 : config.UiScale, 0.80, 1.50);
+        ShowIconToolTips = config.ShowIconToolTips;
         _suppressThemeSave = false;
     }
 
@@ -217,7 +231,8 @@ public partial class MainViewModel : ObservableObject
             AutoStart = AutoStart,
             BlockSeewoAssistantWindow = BlockSeewoAssistantWindow,
             ThemeMode = ThemeMode,
-            UiScale = UiScale
+            UiScale = UiScale,
+            ShowIconToolTips = ShowIconToolTips
         };
         _configService.Save(config);
         // 配置可能被修改（新增/编辑路径），重新加载缺失的图标
@@ -234,7 +249,8 @@ public partial class MainViewModel : ObservableObject
             AutoStart = AutoStart,
             BlockSeewoAssistantWindow = BlockSeewoAssistantWindow,
             ThemeMode = ThemeMode,
-            UiScale = UiScale
+            UiScale = UiScale,
+            ShowIconToolTips = ShowIconToolTips
         };
         _configService.Save(config);
     }

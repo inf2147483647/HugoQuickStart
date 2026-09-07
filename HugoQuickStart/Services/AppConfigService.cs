@@ -16,9 +16,35 @@ public class AppConfigService
 
     public AppConfigService()
     {
-        // 所有运行产生的文件（配置等）均存放在程序安装目录（exe 所在文件夹）
-        var baseDir = AppContext.BaseDirectory;
-        _configPath = Path.Combine(baseDir, "config.json");
+        // 配置存放于 %APPDATA%\HugoQuickStart，与安装目录分离，
+        // 避免覆盖安装/升级时 config.json 被安装包覆盖导致用户设置丢失。
+        var dir = ConfigDirectory;
+        Directory.CreateDirectory(dir);
+        _configPath = Path.Combine(dir, "config.json");
+        MigrateLegacyConfig();
+    }
+
+    /// <summary>用户配置目录（%APPDATA%\HugoQuickStart）。</summary>
+    public static string ConfigDirectory =>
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "HugoQuickStart");
+
+    /// <summary>旧版本把 config.json 放在安装目录（exe 旁），首次运行时自动迁移。</summary>
+    private static void MigrateLegacyConfig()
+    {
+        try
+        {
+            var newPath = Path.Combine(ConfigDirectory, "config.json");
+            var legacyPath = Path.Combine(AppContext.BaseDirectory, "config.json");
+            if (!File.Exists(newPath) && File.Exists(legacyPath))
+            {
+                File.Copy(legacyPath, newPath, overwrite: false);
+                File.Delete(legacyPath);
+            }
+        }
+        catch
+        {
+            // 迁移失败不致命：按全新配置继续
+        }
     }
 
     public AppConfig Load()
@@ -85,7 +111,9 @@ public class AppConfigService
                     Path = "",
                     MatchKey = DefaultAppResolver.KeyEasiNote,
                     Category = "希沃软件",
-                    IconPath = ""
+                    IconPath = "",
+                    IconMode = nameof(IconSourceMode.Preset),
+                    IconKey = "easinote5"
                 },
                 new()
                 {
@@ -93,15 +121,19 @@ public class AppConfigService
                     Path = "",
                     MatchKey = DefaultAppResolver.KeyEasiCamera,
                     Category = "希沃软件",
-                    IconPath = ""
+                    IconPath = "",
+                    IconMode = nameof(IconSourceMode.Preset),
+                    IconKey = "easicamera"
                 },
                 new()
                 {
-                    Name = "Minecraft",
+                    Name = "希沃轻白板",
                     Path = "",
-                    MatchKey = DefaultAppResolver.KeyMinecraft,
+                    MatchKey = DefaultAppResolver.KeyEasiNote5C,
                     Category = "希沃软件",
-                    IconPath = ""
+                    IconPath = "",
+                    IconMode = nameof(IconSourceMode.Preset),
+                    IconKey = "easinote5c"
                 },
                 new()
                 {
@@ -109,7 +141,9 @@ public class AppConfigService
                     Path = "",
                     MatchKey = DefaultAppResolver.KeyVrchat,
                     Category = "希沃软件",
-                    IconPath = ""
+                    IconPath = "",
+                    IconMode = nameof(IconSourceMode.Preset),
+                    IconKey = "vrchat"
                 }
             },
             AutoStart = false,

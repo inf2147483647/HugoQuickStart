@@ -5,6 +5,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Media;
 using Avalonia.Platform;
@@ -39,6 +40,16 @@ public partial class MainWindow : Window
     private SeewoAssistantWindowBlocker? _seewoBlocker;
     private TrayIcon? _trayIcon;
     private FloatBallWindow? _floatBallWindow;
+
+    // ---- 自定义图标悬浮提示（静止 1s 弹出，0.25s 淡入 / 0.25s 淡出） ----
+    private DispatcherTimer? _tipIdleTimer;
+    private DispatcherTimer? _tipHideTimer;
+    private Control? _tipTarget;
+    private string? _tipPendingText;
+    private Point _tipLastPos;
+    private const int TipIdleMs = 1000;
+    private const int TipFadeMs = 250;
+    private const double TipStillThreshold = 4.0;
 
     public MainWindow()
     {
@@ -98,6 +109,114 @@ public partial class MainWindow : Window
             : new ScaleTransform(scale, scale);
     }
 
+    // ================= 图标悬浮提示 =================
+
+    /// <summary>进入图标：开始 1s 静止计时；切换到其它图标一律重新计时（不立即复用）。</summary>
+    private void AppIcon_PointerEntered(object? sender, PointerEventArgs e)
+    {
+        if (sender is not Control control)
+            return;
+
+        var item = control.DataContext as AppItem;
+        var text = item?.ToolTipText;
+        if (string.IsNullOrEmpty(text))
+            return;
+
+        _tipLastPos = e.GetCurrentPoint(null).Position;
+        _tipPendingText = text;
+
+        // 同一图标边缘抖动重新进入且提示仍显示中：取消淡出直接保留，不重新计时
+        if (AppTipPopup.IsOpen && ReferenceEquals(_tipTarget, control) && AppTipBorder.Opacity > 0.9)
+        {
+            _tipHideTimer?.Stop();
+            _tipIdleTimer?.Stop();
+            return;
+        }
+
+        _tipTarget = control;
+
+        // 切换图标：旧提示保持淡出流程，新提示重新计 1s
+        _tipIdleTimer ??= new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(TipIdleMs) };
+        _tipIdleTimer.Stop();
+        _tipIdleTimer.Tick -= TipIdleTimer_Tick;
+        _tipIdleTimer.Tick += TipIdleTimer_Tick;
+        _tipIdleTimer.Start();
+    }
+
+    private void TipIdleTimer_Tick(object? sender, EventArgs e)
+    {
+        _tipIdleTimer?.Stop();
+        if (_tipTarget == null || string.IsNullOrEmpty(_tipPendingText))
+            return;
+
+        // 文本与锚定在弹出时刻才应用，避免淡出途中被提前替换
+        AppTipText.Text = _tipPendingText;
+        AppTipPopup.PlacementTarget = _tipTarget;
+        AppTipPopup.IsOpen = true;
+        AppTipBorder.Opacity = 1; // OpacityTransition 0.25s 淡入
+    }
+
+    /// <summary>移动超过阈值视为"未静止"：弹出前重置 1s 计时；已弹出则保持显示（静止仅约束弹出时机）。</summary>
+    private void AppIcon_PointerMoved(object? sender, PointerEventArgs e)
+    {
+        if (sender is not Control control || !ReferenceEquals(control, _tipTarget))
+            return;
+
+        var pos = e.GetCurrentPoint(null).Position;
+        if (Math.Abs(pos.X - _tipLastPos.X) <= TipStillThreshold &&
+            Math.Abs(pos.Y - _tipLastPos.Y) <= TipStillThreshold)
+            return;
+
+        _tipLastPos = pos;
+
+        if (!AppTipPopup.IsOpen)
+        {
+            _tipIdleTimer?.Stop();
+            _tipIdleTimer?.Start();
+        }
+    }
+
+    private void AppIcon_PointerExited(object? sender, PointerEventArgs e)
+    {
+        if (!ReferenceEquals(sender as Control, _tipTarget))
+            return;
+
+        _tipIdleTimer?.Stop();
+        HideAppTip();
+    }
+
+    /// <summary>点击启动应用时立即收起提示（指针可能仍停留在图标上，不会触发 Exited）。</summary>
+    private void AppIcon_PointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (!ReferenceEquals(sender as Control, _tipTarget))
+            return;
+
+        _tipIdleTimer?.Stop();
+        if (AppTipPopup.IsOpen)
+            HideAppTip();
+    }
+
+    /// <summary>淡出 0.25s 后再真正关闭 Popup（Popup 不支持淡出，动画结束后才收起窗口）。</summary>
+    private void HideAppTip()
+    {
+        AppTipBorder.Opacity = 0; // OpacityTransition 0.25s 淡出
+
+        _tipHideTimer ??= new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(TipFadeMs) };
+        _tipHideTimer.Stop();
+        _tipHideTimer.Tick -= TipHideTimer_Tick;
+        _tipHideTimer.Tick += TipHideTimer_Tick;
+        _tipHideTimer.Start();
+    }
+
+    private void TipHideTimer_Tick(object? sender, EventArgs e)
+    {
+        _tipHideTimer?.Stop();
+        AppTipPopup.IsOpen = false;
+        // 若已切到新图标且正在重新计时（淡出与 1s 计时并行），保留目标不清空
+        if (_tipIdleTimer?.IsEnabled != true)
+            _tipTarget = null;
+    }
+
     private void OnLoaded(object? sender, RoutedEventArgs e)
     {
         // 窗口尺寸变化时立即重新锚定右下角，避免依赖定时器产生的延迟抖动
@@ -108,6 +227,11 @@ public partial class MainWindow : Window
         // 外部无焦点事件的抬层由 EVENT_SYSTEM_FOREGROUND 钩子 + 定时器真实 Z 序探测兜底。
         Deactivated += (_, _) =>
         {
+            // 失焦时收起悬浮提示，避免 Popup 残留在屏幕上
+            _tipIdleTimer?.Stop();
+            if (AppTipPopup.IsOpen)
+                HideAppTip();
+
             if (_dialogCount == 0 && !_isCloseConfirmShown)
                 SendToBottom();
         };

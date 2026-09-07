@@ -124,6 +124,9 @@
                                                 BorderThickness="0"
                                                 Padding="4"
                                                 CornerRadius="8"
+                                                PointerEntered="AppIcon_PointerEntered"
+                                                PointerMoved="AppIcon_PointerMoved"
+                                                PointerExited="AppIcon_PointerExited"
                                                 Command="{Binding #QuickEntriesControl.DataContext.LaunchAppCommand}"
                                                 CommandParameter="{Binding}">
                                             <Button.Styles>
@@ -226,6 +229,10 @@
                                                 BorderThickness="0"
                                                 Padding="4"
                                                 CornerRadius="8"
+                                                PointerEntered="AppIcon_PointerEntered"
+                                                PointerMoved="AppIcon_PointerMoved"
+                                                PointerExited="AppIcon_PointerExited"
+                                                PointerPressed="AppIcon_PointerPressed"
                                                 Command="{Binding #XiwoAppsControl.DataContext.LaunchAppCommand}"
                                                 CommandParameter="{Binding}">
                                             <Button.Styles>
@@ -325,6 +332,33 @@
                            TextWrapping="Wrap"
                            MaxWidth="340"/>
             </Border>
+
+            <!-- 自定义悬浮提示：悬停静止 1s 弹出（切换图标重新计时），0.25s 淡入 / 0.25s 淡出（动画在内部 Border 的 Opacity 上） -->
+            <Popup x:Name="AppTipPopup"
+                   Grid.RowSpan="3"
+                   Placement="Bottom"
+                   HorizontalOffset="0"
+                   VerticalOffset="4"
+                   IsLightDismissEnabled="False">
+                <Border x:Name="AppTipBorder"
+                        Opacity="0"
+                        Background="#E51B1B1B"
+                        BorderBrush="#33FFFFFF"
+                        BorderThickness="1"
+                        CornerRadius="6"
+                        Padding="10,6"
+                        MaxWidth="320">
+                    <Border.Transitions>
+                        <Transitions>
+                            <DoubleTransition Property="Opacity" Duration="0:0:0.25"/>
+                        </Transitions>
+                    </Border.Transitions>
+                    <TextBlock x:Name="AppTipText"
+                               FontSize="12"
+                               Foreground="White"
+                               TextWrapping="Wrap"/>
+                </Border>
+            </Popup>
 
             <!-- Edit Mode Indicator -->
             <Border Grid.Row="2"
