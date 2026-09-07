@@ -43,6 +43,39 @@ public partial class MainViewModel : ObservableObject
     /// <summary>是否拦截希沃服务助手（SeewoServiceAssistant.exe）的右下角悬浮窗。</summary>
     [ObservableProperty]
     private bool _blockSeewoAssistantWindow = true;
+
+    /// <summary>主题色模式（"System"/"Dark"/"Light"）。变更时立即应用并持久化。</summary>
+    [ObservableProperty]
+    private string _themeMode = "System";
+
+    /// <summary>界面缩放：主界面总体大小倍率，0.80–1.50，默认 1.00。变更时立即应用并持久化。</summary>
+    [ObservableProperty]
+    private double _uiScale = 1.0;
+
+    partial void OnUiScaleChanged(double value)
+    {
+        // 钳制到合法范围，并按 0.05 步长取整（滑条 snap 之外的入口兜底）
+        var clamped = Math.Round(Math.Clamp(value, 0.80, 1.50) / 0.05) * 0.05;
+        if (Math.Abs(clamped - value) > 1e-9)
+        {
+            UiScale = clamped;
+            return;
+        }
+
+        OnPropertyChanged(nameof(ScaledWindowWidth));
+        if (!_suppressThemeSave)
+            SaveSettingsOnly();
+    }
+
+    /// <summary>主界面窗口宽度 = 基准 370 × 缩放（保证缩放后仍容下一行 5 个图标）。</summary>
+    public double ScaledWindowWidth => 370 * UiScale;
+
+    partial void OnThemeModeChanged(string value)
+    {
+        ThemeService.Apply(ThemeService.Parse(value));
+        if (!_suppressThemeSave)
+            SaveSettingsOnly();
+    }
     
     [ObservableProperty]
     private bool _showSettings;
@@ -61,6 +94,8 @@ public partial class MainViewModel : ObservableObject
 
     private DispatcherTimer? _statusTimer;
     private DispatcherTimer? _resolveTimer;
+    /// <summary>加载配置期间抑制主题变更触发的回写，避免启动即重复保存。</summary>
+    private bool _suppressThemeSave;
 
     private const int ResolveIntervalSeconds = 20;
 
@@ -165,6 +200,12 @@ public partial class MainViewModel : ObservableObject
         XiwoApps = new ObservableCollection<AppItem>(config.XiwoApps);
         AutoStart = config.AutoStart;
         BlockSeewoAssistantWindow = config.BlockSeewoAssistantWindow;
+
+        // 加载阶段抑制回写；应用已保存的主题色与界面缩放
+        _suppressThemeSave = true;
+        ThemeMode = string.IsNullOrWhiteSpace(config.ThemeMode) ? "System" : config.ThemeMode;
+        UiScale = Math.Clamp(config.UiScale <= 0 ? 1.0 : config.UiScale, 0.80, 1.50);
+        _suppressThemeSave = false;
     }
 
     public void SaveConfig()
@@ -174,40 +215,68 @@ public partial class MainViewModel : ObservableObject
             QuickEntries = new List<AppItem>(QuickEntries),
             XiwoApps = new List<AppItem>(XiwoApps),
             AutoStart = AutoStart,
-            BlockSeewoAssistantWindow = BlockSeewoAssistantWindow
+            BlockSeewoAssistantWindow = BlockSeewoAssistantWindow,
+            ThemeMode = ThemeMode,
+            UiScale = UiScale
         };
         _configService.Save(config);
         // 配置可能被修改（新增/编辑路径），重新加载缺失的图标
         _ = RefreshIconsAsync();
     }
 
+    /// <summary>仅持久化设置项（主题/缩放等），不触发图标刷新。供高频变更的 UI 控件使用。</summary>
+    private void SaveSettingsOnly()
+    {
+        var config = new AppConfig
+        {
+            QuickEntries = new List<AppItem>(QuickEntries),
+            XiwoApps = new List<AppItem>(XiwoApps),
+            AutoStart = AutoStart,
+            BlockSeewoAssistantWindow = BlockSeewoAssistantWindow,
+            ThemeMode = ThemeMode,
+            UiScale = UiScale
+        };
+        _configService.Save(config);
+    }
+
     /// <summary>
-    /// 为所有还没有图标的条目补图：内置预设（IconKey）直接加载内嵌资源图标；
-    /// 其余条目在后台提取 EXE 真实图标。提取失败或路径无效的条目保持占位符。
+    /// 为所有还没有图标的条目补图，按 IconMode 分流：
+    /// Custom=用户选择的图片文件（IconPath）；Preset=内嵌资源图标（IconKey）；
+    /// Auto=从 EXE 提取真实图标，协议链接回退内置图标。全部失败保持占位符。
     /// </summary>
     public async Task RefreshIconsAsync()
     {
         var pending = QuickEntries
             .Concat(XiwoApps)
             .Where(item => item.Icon == null &&
-                           (!string.IsNullOrWhiteSpace(item.Path) || !string.IsNullOrWhiteSpace(item.IconKey)))
+                           (!string.IsNullOrWhiteSpace(item.Path) ||
+                            !string.IsNullOrWhiteSpace(item.IconKey) ||
+                            !string.IsNullOrWhiteSpace(item.IconPath)))
             .ToList();
 
         foreach (var item in pending)
         {
             Bitmap? icon = null;
+            var mode = ParseIconMode(item.IconMode);
 
-            // 内置预设图标：直接加载嵌入资源，不依赖本机安装的 exe。
-            // 默认/历史的 classisland://、secrandom:// 项即使没有 IconKey 也按协议自动归类。
-            var iconKey = string.IsNullOrWhiteSpace(item.IconKey) ? GuessBuiltinKey(item.Path) : item.IconKey;
-            if (iconKey != null)
+            if (mode == IconSourceMode.Custom)
             {
-                icon = AppIconLoader.LoadBuiltinIcon(iconKey);
+                icon = await Task.Run(() => AppIconLoader.LoadFromFile(item.IconPath));
             }
-
-            if (icon == null && !string.IsNullOrWhiteSpace(item.Path))
+            else if (mode == IconSourceMode.Preset)
             {
-                icon = await Task.Run(() => AppIconLoader.ExtractForPath(item.Path));
+                if (!string.IsNullOrWhiteSpace(item.IconKey))
+                    icon = AppIconLoader.LoadBuiltinIcon(item.IconKey);
+            }
+            else
+            {
+                // Auto：优先从 EXE 提取；协议链接（classisland:// 等）回退内置图标
+                if (!string.IsNullOrWhiteSpace(item.Path) && !ProcessLauncher.IsUri(ProcessLauncher.CleanPath(item.Path) ?? ""))
+                    icon = await Task.Run(() => AppIconLoader.ExtractForPath(item.Path));
+
+                var iconKey = string.IsNullOrWhiteSpace(item.IconKey) ? GuessBuiltinKey(item.Path) : item.IconKey;
+                if (icon == null && iconKey != null)
+                    icon = AppIconLoader.LoadBuiltinIcon(iconKey);
             }
 
             if (icon != null)
@@ -217,6 +286,10 @@ public partial class MainViewModel : ObservableObject
             }
         }
     }
+
+    /// <summary>解析持久化的 IconMode 字符串；无法识别时按 Auto 处理。</summary>
+    private static IconSourceMode ParseIconMode(string? mode) =>
+        Enum.TryParse<IconSourceMode>(mode, ignoreCase: true, out var parsed) ? parsed : IconSourceMode.Auto;
 
     /// <summary>
     /// 按链接协议推测内置图标标识：classisland://、secrandom:// 分别对应同名内嵌图标，
@@ -248,19 +321,31 @@ public partial class MainViewModel : ObservableObject
             return;
         }
 
-        // 支持绝对路径与相对安装目录的相对路径
-        var launched = ProcessLauncher.Launch(app.Path, app.Arguments);
-        if (launched)
+        // 支持绝对路径与相对安装目录的相对路径；主路径失败时按顺序尝试备选路径
+        var candidates = new List<string>();
+        if (!string.IsNullOrWhiteSpace(app.Path))
+            candidates.Add(app.Path);
+        foreach (var fb in app.FallbackPaths)
         {
+            if (!string.IsNullOrWhiteSpace(fb) && !candidates.Contains(fb, StringComparer.OrdinalIgnoreCase))
+                candidates.Add(fb);
+        }
+
+        foreach (var candidate in candidates)
+        {
+            if (!ProcessLauncher.Launch(candidate, app.Arguments))
+                continue;
+
             // 协议快捷入口（classisland:// 等）不弹对话框、直接启动，
             // 用底部黑色状态条提示确认已开启对应协议注册/导航（与普通应用启动提示一致）。
-            var hint = GetProtocolHint(app.Path);
-            ShowStatus(hint ?? $"正在启动「{app.Name}」...");
+            var hint = GetProtocolHint(candidate);
+            var usedFallback = !string.Equals(candidate, app.Path, StringComparison.OrdinalIgnoreCase);
+            var suffix = usedFallback ? "（已使用备选路径）" : string.Empty;
+            ShowStatus(hint ?? $"正在启动「{app.Name}」...{suffix}");
+            return;
         }
-        else
-        {
-            ShowStatus($"启动失败：「{app.Name}」路径无效，点击 ✎ 修改路径");
-        }
+
+        ShowStatus($"启动失败：「{app.Name}」路径无效，点击 ✎ 修改路径");
     }
 
     /// <summary>

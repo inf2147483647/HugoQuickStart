@@ -2,7 +2,6 @@
 bin/
 obj/
 publish/
-dist/
 Installer/
 
 # ---- 用户本地数据 ----

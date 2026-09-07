@@ -73,6 +73,18 @@
                                        Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
                         </Grid>
                     </ListBoxItem>
+                    <ListBoxItem Classes="navitem" x:Name="NavAppearance">
+                        <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
+                            <TextBlock Text="&#xE790;"
+                                       FontFamily="Segoe MDL2 Assets, Segoe UI Symbol"
+                                       FontSize="15"
+                                       VerticalAlignment="Center"
+                                       Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+                            <TextBlock Grid.Column="1" Text="外观设置"
+                                       VerticalAlignment="Center"
+                                       Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+                        </Grid>
+                    </ListBoxItem>
                     <ListBoxItem Classes="navitem" x:Name="NavIntercept">
                         <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
                             <TextBlock Text="&#xE72E;"
@@ -152,6 +164,102 @@
                                           IsChecked="{Binding AutoStart}"
                                           VerticalAlignment="Center"/>
                         </Grid>
+                    </Border>
+                </StackPanel>
+            </ScrollViewer>
+
+            <!-- ===== 页面：外观设置 ===== -->
+            <ScrollViewer x:Name="PageAppearance"
+                          IsVisible="False"
+                          VerticalScrollBarVisibility="Auto">
+                <StackPanel x:Name="PageAppearancePanel"
+                            Margin="28,26,28,20" Spacing="8">
+                    <TextBlock Text="外观设置"
+                               FontSize="22"
+                               FontWeight="SemiBold"
+                               Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+                    <TextBlock Text="调整界面主题配色。"
+                               FontSize="12"
+                               Margin="0,0,0,12"
+                               Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+
+                    <!-- 主题色 -->
+                    <Border Padding="16,12"
+                            CornerRadius="8"
+                            Background="{DynamicResource SubtleFillColorTertiaryBrush}">
+                        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="14">
+                            <Border Width="36" Height="36" CornerRadius="8"
+                                    Background="{DynamicResource SubtleFillColorSecondaryBrush}">
+                                <TextBlock Text="&#xE790;"
+                                           FontFamily="Segoe MDL2 Assets, Segoe UI Symbol"
+                                           FontSize="16"
+                                           HorizontalAlignment="Center"
+                                           VerticalAlignment="Center"
+                                           Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+                            </Border>
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                                <TextBlock Text="主题色"
+                                           FontSize="14"
+                                           FontWeight="SemiBold"
+                                           Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+                                <TextBlock Text="选择跟随系统、深色或浅色外观，立即生效并保存。"
+                                           FontSize="12"
+                                           TextWrapping="Wrap"
+                                           Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+                            </StackPanel>
+                            <ComboBox Grid.Column="2"
+                                      x:Name="ThemeCombo"
+                                      VerticalAlignment="Center"
+                                      MinWidth="120"
+                                      SelectionChanged="ThemeCombo_OnSelectionChanged">
+                                <ComboBoxItem>跟随系统</ComboBoxItem>
+                                <ComboBoxItem>深色</ComboBoxItem>
+                                <ComboBoxItem>浅色</ComboBoxItem>
+                            </ComboBox>
+                        </Grid>
+                    </Border>
+
+                    <!-- 界面缩放 -->
+                    <Border Padding="16,12"
+                            CornerRadius="8"
+                            Background="{DynamicResource SubtleFillColorTertiaryBrush}">
+                        <StackPanel Spacing="10">
+                            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="14">
+                                <Border Width="36" Height="36" CornerRadius="8"
+                                        Background="{DynamicResource SubtleFillColorSecondaryBrush}">
+                                    <TextBlock Text="&#xE8A3;"
+                                               FontFamily="Segoe MDL2 Assets, Segoe UI Symbol"
+                                               FontSize="16"
+                                               HorizontalAlignment="Center"
+                                               VerticalAlignment="Center"
+                                               Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+                                </Border>
+                                <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                                    <TextBlock Text="界面缩放"
+                                               FontSize="14"
+                                               FontWeight="SemiBold"
+                                               Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+                                    <TextBlock Text="控制主界面的总体大小（0.80 – 1.50，步长 0.05）。"
+                                               FontSize="12"
+                                               TextWrapping="Wrap"
+                                               Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+                                </StackPanel>
+                                <TextBlock Grid.Column="2"
+                                           VerticalAlignment="Center"
+                                           MinWidth="44"
+                                           TextAlignment="Right"
+                                           FontSize="14"
+                                           FontWeight="SemiBold"
+                                           Text="{Binding UiScale, StringFormat={}{0:F2}}"
+                                           Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+                            </Grid>
+                            <Slider Minimum="0.80"
+                                    Maximum="1.50"
+                                    TickFrequency="0.05"
+                                    IsSnapToTickEnabled="True"
+                                    Value="{Binding UiScale, Mode=TwoWay}"
+                                    HorizontalAlignment="Stretch"/>
+                        </StackPanel>
                     </Border>
                 </StackPanel>
             </ScrollViewer>

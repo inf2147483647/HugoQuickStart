@@ -277,6 +277,30 @@ public static class AppIconLoader
         }
     }
 
+    /// <summary>
+    /// 从用户选择的图片文件（png/jpg/bmp/gif/ico）加载图标。
+    /// 文件不存在或解码失败返回 null。应在后台线程调用。
+    /// </summary>
+    public static AvaloniaBitmap? LoadFromFile(string? filePath)
+    {
+        if (string.IsNullOrWhiteSpace(filePath))
+            return null;
+
+        try
+        {
+            var path = ProcessLauncher.CleanPath(filePath);
+            if (string.IsNullOrEmpty(path) || !File.Exists(path))
+                return null;
+
+            using var stream = File.OpenRead(path);
+            return new AvaloniaBitmap(stream);
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
     private static readonly Dictionary<string, AvaloniaBitmap> BuiltinCache = new();
 
     /// <summary>

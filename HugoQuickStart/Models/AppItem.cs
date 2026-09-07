@@ -1,8 +1,20 @@
+using System.Collections.Generic;
 using System.ComponentModel;
 using System.Text.Json.Serialization;
 using Avalonia.Media.Imaging;
 
 namespace HugoQuickStart.Models;
+
+/// <summary>编辑对话框中“图标”来源模式。</summary>
+public enum IconSourceMode
+{
+    /// <summary>自动获取：从目标 exe 提取真实图标（协议链接回退内置图标）。</summary>
+    Auto,
+    /// <summary>预设：使用内置预设图标（IconKey）。</summary>
+    Preset,
+    /// <summary>自定义：使用用户选择的图片文件（IconPath）。</summary>
+    Custom
+}
 
 public class AppItem : INotifyPropertyChanged
 {
@@ -13,6 +25,8 @@ public class AppItem : INotifyPropertyChanged
     private string _arguments = string.Empty;
     private string _matchKey = string.Empty;
     private string _iconKey = string.Empty;
+    private string _iconMode = nameof(IconSourceMode.Auto);
+    private List<string> _fallbackPaths = new();
     private Bitmap? _icon;
 
     public string Name
@@ -63,6 +77,26 @@ public class AppItem : INotifyPropertyChanged
     {
         get => _iconKey;
         set { _iconKey = value; OnPropertyChanged(nameof(IconKey)); }
+    }
+
+    /// <summary>
+    /// 图标来源模式：<see cref="IconSourceMode"/> 的名称（Auto/Preset/Custom）。
+    /// 默认 Auto（从目标 exe 自动提取）。持久化到配置文件。
+    /// </summary>
+    public string IconMode
+    {
+        get => _iconMode;
+        set { _iconMode = value; OnPropertyChanged(nameof(IconMode)); }
+    }
+
+    /// <summary>
+    /// 备选启动路径/URI 列表。主路径启动失败时按顺序自动尝试，全部失败才提示。
+    /// 持久化到配置文件。
+    /// </summary>
+    public List<string> FallbackPaths
+    {
+        get => _fallbackPaths;
+        set { _fallbackPaths = value ?? new List<string>(); OnPropertyChanged(nameof(FallbackPaths)); }
     }
 
     /// <summary>从目标 exe/快捷方式提取的真实图标（不写入配置文件）。</summary>

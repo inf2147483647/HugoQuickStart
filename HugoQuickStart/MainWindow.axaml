@@ -4,12 +4,12 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:vm="using:HugoQuickStart.ViewModels"
         xmlns:models="using:HugoQuickStart.Models"
-        mc:Ignorable="d" d:DesignWidth="380" d:DesignHeight="520"
+        mc:Ignorable="d" d:DesignWidth="370" d:DesignHeight="520"
         x:Class="HugoQuickStart.MainWindow"
         x:DataType="vm:MainViewModel"
         Title="快捷启动"
         Icon="avares://HugoQuickStart/Assets/app.ico"
-        Width="380"
+        Width="{Binding ScaledWindowWidth}"
         SizeToContent="Height"
         CanResize="False"
         WindowDecorations="None"
@@ -39,7 +39,9 @@
         </ResourceDictionary>
     </Window.Resources>
 
-    <Border CornerRadius="12"
+    <LayoutTransformControl x:Name="RootScale">
+    <Border x:Name="RootBorder"
+            CornerRadius="12"
             Background="{DynamicResource PanelBackgroundBrush}"
             BorderBrush="{DynamicResource PanelBorderBrush}"
             BorderThickness="1">
@@ -109,7 +111,7 @@
                         <ItemsControl ItemsSource="{Binding QuickEntries}" x:Name="QuickEntriesControl">
                             <ItemsControl.ItemsPanel>
                                 <ItemsPanelTemplate>
-                                    <WrapPanel Orientation="Horizontal" ItemWidth="80" ItemHeight="90"/>
+                                    <WrapPanel Orientation="Horizontal" ItemWidth="68" ItemHeight="86"/>
                                 </ItemsPanelTemplate>
                             </ItemsControl.ItemsPanel>
                             <ItemsControl.ItemTemplate>
@@ -212,7 +214,7 @@
                         <ItemsControl ItemsSource="{Binding XiwoApps}" x:Name="XiwoAppsControl">
                             <ItemsControl.ItemsPanel>
                                 <ItemsPanelTemplate>
-                                    <WrapPanel Orientation="Horizontal" ItemWidth="80" ItemHeight="90"/>
+                                    <WrapPanel Orientation="Horizontal" ItemWidth="68" ItemHeight="86"/>
                                 </ItemsPanelTemplate>
                             </ItemsControl.ItemsPanel>
                             <ItemsControl.ItemTemplate>
@@ -337,6 +339,7 @@
             </Border>
         </Grid>
     </Border>
+    </LayoutTransformControl>
 
     <Window.Styles>
         <Style Selector="Button.icon">
