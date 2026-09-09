@@ -49,36 +49,64 @@ public class AppConfigService
 
     public AppConfig Load()
     {
-        if (File.Exists(_configPath))
+        // 首次运行：目录下无配置时写入默认配置，保证后续必有稳定读写入口。
+        if (!File.Exists(_configPath))
         {
-            try
-            {
-                var json = File.ReadAllText(_configPath);
-                var config = JsonSerializer.Deserialize<AppConfig>(json, JsonOptions);
-                if (config != null)
-                    return config;
-            }
-            catch
-            {
-                // If config is corrupted, return default
-            }
+            var fresh = CreateDefaultConfig();
+            AtomicWrite(fresh);
+            return fresh;
         }
 
-        var defaultConfig = CreateDefaultConfig();
-        Save(defaultConfig);
-        return defaultConfig;
-    }
-
-    public void Save(AppConfig config)
-    {
         try
         {
-            var json = JsonSerializer.Serialize(config, JsonOptions);
-            File.WriteAllText(_configPath, json);
+            var json = File.ReadAllText(_configPath);
+            var config = JsonSerializer.Deserialize<AppConfig>(json, JsonOptions);
+            if (config != null)
+                return config;
         }
         catch
         {
-            // Ignore save errors
+            // 读取/反序列化失败视为配置损坏，走下方恢复逻辑
+        }
+
+        // 配置损坏：先备份原始文件再重建，绝不直接覆盖导致用户设置被静默抹掉。
+        BackupCorruptConfig();
+        var defaults = CreateDefaultConfig();
+        AtomicWrite(defaults);
+        return defaults;
+    }
+
+    public void Save(AppConfig config) => AtomicWrite(config);
+
+    /// <summary>原子写入：先写临时文件再整体替换，避免写入中途（程序崩溃/断电）产生截断的损坏配置。</summary>
+    private void AtomicWrite(AppConfig config)
+    {
+        var tmp = _configPath + ".tmp";
+        try
+        {
+            var json = JsonSerializer.Serialize(config, JsonOptions);
+            File.WriteAllText(tmp, json);
+            // 同目录内重命名替换，NTFS 上为原子操作，目标存在与否均可。
+            File.Move(tmp, _configPath, overwrite: true);
+        }
+        catch
+        {
+            try { if (File.Exists(tmp)) File.Delete(tmp); } catch { /* 忽略清理失败 */ }
+        }
+    }
+
+    /// <summary>把损坏的配置复制为带时间戳的备份，供人工恢复；保留原文件以便排查。</summary>
+    private void BackupCorruptConfig()
+    {
+        try
+        {
+            var backup =
+                _configPath + ".corrupt-" + DateTime.Now.ToString("yyyyMMddHHmmss") + ".bak";
+            File.Copy(_configPath, backup, overwrite: false);
+        }
+        catch
+        {
+            // 备份失败不致命：仍按默认配置继续
         }
     }
 
