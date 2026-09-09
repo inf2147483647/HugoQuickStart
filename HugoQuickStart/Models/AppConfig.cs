@@ -20,6 +20,12 @@ public class AppConfig
 
     /// <summary>图标悬浮提示：悬停显示备注（备注为空则显示 exe 绝对路径）。默认关闭。持久化到配置文件。</summary>
     public bool ShowIconToolTips { get; set; } = false;
+
+    /// <summary>点击冷却开关：同一图标在冷却时间内不可重复启动，防止手速过快导致应用多重启动。默认关闭。持久化到配置文件。</summary>
+    public bool LaunchCooldownEnabled { get; set; } = false;
+
+    /// <summary>点击冷却时长（秒），0.1–5.0，默认 1.0。持久化到配置文件。</summary>
+    public double LaunchCooldownSeconds { get; set; } = 1.0;
     public double WindowWidth { get; set; } = 380;
     public double WindowHeight { get; set; } = 500;
     public int MarginRight { get; set; } = 20;

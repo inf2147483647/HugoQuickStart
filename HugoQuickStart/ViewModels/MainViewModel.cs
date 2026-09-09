@@ -56,6 +56,37 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty]
     private bool _showIconToolTips = false;
 
+    /// <summary>点击冷却开关：同一图标在冷却时间内不可重复启动，避免手速过快导致应用多重启动。默认关闭。</summary>
+    [ObservableProperty]
+    private bool _launchCooldownEnabled = false;
+
+    /// <summary>点击冷却时长（秒），0.1–5.0，默认 1.0。</summary>
+    [ObservableProperty]
+    private double _launchCooldownSeconds = 1.0;
+
+    partial void OnLaunchCooldownEnabledChanged(bool value)
+    {
+        if (!_suppressThemeSave)
+            SaveSettingsOnly();
+    }
+
+    partial void OnLaunchCooldownSecondsChanged(double value)
+    {
+        // 钳制到合法范围，并按 0.1 步长取整（滑条 snap 之外的入口兜底）
+        var clamped = Math.Round(Math.Clamp(value, 0.1, 5.0) / 0.1) * 0.1;
+        if (Math.Abs(clamped - value) > 1e-9)
+        {
+            LaunchCooldownSeconds = clamped;
+            return;
+        }
+
+        if (!_suppressThemeSave)
+            SaveSettingsOnly();
+    }
+
+    /// <summary>同一图标最近一次成功启动的时间（点击冷却判断依据）。</summary>
+    private readonly Dictionary<AppItem, DateTime> _lastLaunchTimes = new();
+
     partial void OnShowIconToolTipsChanged(bool value)
     {
         AppItem.ToolTipsEnabled = value;
@@ -219,6 +250,8 @@ public partial class MainViewModel : ObservableObject
         ThemeMode = string.IsNullOrWhiteSpace(config.ThemeMode) ? "System" : config.ThemeMode;
         UiScale = Math.Clamp(config.UiScale <= 0 ? 1.0 : config.UiScale, 0.80, 1.50);
         ShowIconToolTips = config.ShowIconToolTips;
+        LaunchCooldownEnabled = config.LaunchCooldownEnabled;
+        LaunchCooldownSeconds = config.LaunchCooldownSeconds <= 0 ? 1.0 : config.LaunchCooldownSeconds;
         _suppressThemeSave = false;
     }
 
@@ -232,7 +265,9 @@ public partial class MainViewModel : ObservableObject
             BlockSeewoAssistantWindow = BlockSeewoAssistantWindow,
             ThemeMode = ThemeMode,
             UiScale = UiScale,
-            ShowIconToolTips = ShowIconToolTips
+            ShowIconToolTips = ShowIconToolTips,
+            LaunchCooldownEnabled = LaunchCooldownEnabled,
+            LaunchCooldownSeconds = LaunchCooldownSeconds
         };
         _configService.Save(config);
         // 配置可能被修改（新增/编辑路径），重新加载缺失的图标
@@ -250,7 +285,9 @@ public partial class MainViewModel : ObservableObject
             BlockSeewoAssistantWindow = BlockSeewoAssistantWindow,
             ThemeMode = ThemeMode,
             UiScale = UiScale,
-            ShowIconToolTips = ShowIconToolTips
+            ShowIconToolTips = ShowIconToolTips,
+            LaunchCooldownEnabled = LaunchCooldownEnabled,
+            LaunchCooldownSeconds = LaunchCooldownSeconds
         };
         _configService.Save(config);
     }
@@ -337,6 +374,13 @@ public partial class MainViewModel : ObservableObject
             return;
         }
 
+        // 点击冷却：同一图标在冷却时间内不可重复启动，避免手速过快导致应用多重启动
+        if (LaunchCooldownEnabled && IsInCooldown(app))
+        {
+            ShowStatus("应用已经在启动了，请耐心等待~");
+            return;
+        }
+
         // 支持绝对路径与相对安装目录的相对路径；主路径失败时按顺序尝试备选路径。
         // 参数跟随路径：每个备选用各自的参数；备选参数留空时沿用全局"启动参数"（兼容旧配置行为）。
         var candidates = new List<LaunchCandidate>
@@ -362,12 +406,21 @@ public partial class MainViewModel : ObservableObject
             var hint = GetProtocolHint(candidate.Path);
             var usedFallback = !string.Equals(candidate.Path, app.Path, StringComparison.OrdinalIgnoreCase);
             var suffix = usedFallback ? "（已使用备选路径）" : string.Empty;
+            MarkLaunched(app);
             ShowStatus(hint ?? $"正在启动「{app.Name}」...{suffix}");
             return;
         }
 
         ShowStatus($"启动失败：「{app.Name}」路径无效，点击 ✎ 修改路径");
     }
+
+    /// <summary>判断同一图标是否正处于点击冷却中。</summary>
+    private bool IsInCooldown(AppItem app) =>
+        _lastLaunchTimes.TryGetValue(app, out var last) &&
+        (DateTime.Now - last).TotalSeconds < LaunchCooldownSeconds;
+
+    /// <summary>记录一次成功的启动时间，作为冷却起算点。</summary>
+    private void MarkLaunched(AppItem app) => _lastLaunchTimes[app] = DateTime.Now;
 
     /// <summary>
     /// 需要"协议导航提示"的协议白名单（键为协议 scheme，值为底部黑色状态条提示文案）。

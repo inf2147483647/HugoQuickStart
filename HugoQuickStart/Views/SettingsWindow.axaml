@@ -165,6 +165,62 @@
                                           VerticalAlignment="Center"/>
                         </Grid>
                     </Border>
+
+                    <!-- 点击冷却 -->
+                    <Border Padding="16,12"
+                            CornerRadius="8"
+                            Background="{DynamicResource SubtleFillColorTertiaryBrush}">
+                        <StackPanel Spacing="10">
+                            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="14">
+                                <Border Width="36" Height="36" CornerRadius="8"
+                                        Background="{DynamicResource SubtleFillColorSecondaryBrush}">
+                                    <TextBlock Text="&#xE823;"
+                                               FontFamily="Segoe MDL2 Assets, Segoe UI Symbol"
+                                               FontSize="16"
+                                               HorizontalAlignment="Center"
+                                               VerticalAlignment="Center"
+                                               Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+                                </Border>
+                                <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                                    <TextBlock Text="点击冷却"
+                                               FontSize="14"
+                                               FontWeight="SemiBold"
+                                               Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+                                    <TextBlock Text="点击图标启动应用后，同一图标在冷却时间内无法再次点击，防止手速过快导致应用多重启动。"
+                                               FontSize="12"
+                                               TextWrapping="Wrap"
+                                               Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+                                </StackPanel>
+                                <ToggleSwitch Grid.Column="2"
+                                              IsChecked="{Binding LaunchCooldownEnabled}"
+                                              VerticalAlignment="Center"/>
+                            </Grid>
+                            <!-- 冷却时间（仅在开关启用时可调） -->
+                            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="14"
+                                  IsEnabled="{Binding LaunchCooldownEnabled}">
+                                <TextBlock Text="冷却时间"
+                                           FontSize="13"
+                                           VerticalAlignment="Center"
+                                           Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+                                <Slider Grid.Column="1"
+                                        Minimum="0.1"
+                                        Maximum="5"
+                                        TickFrequency="0.1"
+                                        IsSnapToTickEnabled="True"
+                                        Value="{Binding LaunchCooldownSeconds, Mode=TwoWay}"
+                                        VerticalAlignment="Center"
+                                        HorizontalAlignment="Stretch"/>
+                                <TextBlock Grid.Column="2"
+                                           VerticalAlignment="Center"
+                                           MinWidth="44"
+                                           TextAlignment="Right"
+                                           FontSize="14"
+                                           FontWeight="SemiBold"
+                                           Text="{Binding LaunchCooldownSeconds, StringFormat={}{0:F1} 秒}"
+                                           Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+                            </Grid>
+                        </StackPanel>
+                    </Border>
                 </StackPanel>
             </ScrollViewer>
 
