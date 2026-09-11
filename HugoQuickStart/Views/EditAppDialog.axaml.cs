@@ -24,6 +24,8 @@ public partial class EditAppDialog : Window
     private ComboBox _presetIconCombo = null!;
     private DockPanel _customIconRow = null!;
     private TextBox _customIconTextBox = null!;
+    private DockPanel _exeIconRow = null!;
+    private TextBox _exeIconTextBox = null!;
     private StackPanel _fallbackPanel = null!;
 
     /// <summary>内置预设图标清单（key 对应 Assets/presets/&lt;key&gt;.png）。</summary>
@@ -79,6 +81,7 @@ public partial class EditAppDialog : Window
         _iconModeCombo.Items.Add(new ComboBoxItem { Content = "自动获取" });
         _iconModeCombo.Items.Add(new ComboBoxItem { Content = "预设" });
         _iconModeCombo.Items.Add(new ComboBoxItem { Content = "自定义" });
+        _iconModeCombo.Items.Add(new ComboBoxItem { Content = "从 EXE 提取" });
         _iconModeCombo.SelectionChanged += IconModeCombo_SelectionChanged;
         iconPanel.Children.Add(_iconModeCombo);
 
@@ -116,6 +119,29 @@ public partial class EditAppDialog : Window
         };
         _customIconRow.Children.Add(_customIconTextBox);
         iconPanel.Children.Add(_customIconRow);
+
+        // 从 EXE 提取：exe 文件路径 + 浏览
+        _exeIconRow = new DockPanel
+        {
+            Margin = new Thickness(0, 4, 0, 0),
+            IsVisible = false
+        };
+        var exeBrowseButton = new Button
+        {
+            Content = "浏览...",
+            MinWidth = 72,
+            Margin = new Thickness(6, 0, 0, 0)
+        };
+        DockPanel.SetDock(exeBrowseButton, Dock.Right);
+        exeBrowseButton.Click += ExeIconBrowseButton_Click;
+        _exeIconRow.Children.Add(exeBrowseButton);
+
+        _exeIconTextBox = new TextBox
+        {
+            PlaceholderText = "选择用于提取图标的程序文件（.exe）"
+        };
+        _exeIconRow.Children.Add(_exeIconTextBox);
+        iconPanel.Children.Add(_exeIconRow);
 
         panel.Children.Add(iconPanel);
 
@@ -258,6 +284,7 @@ public partial class EditAppDialog : Window
             _presetIconCombo.SelectedIndex = 0;
 
         _customIconTextBox.Text = AppItem.IconPath;
+        _exeIconTextBox.Text = AppItem.IconExePath;
 
         foreach (var fallback in AppItem.FallbackPaths)
             AddFallbackRow(fallback);
@@ -268,6 +295,7 @@ public partial class EditAppDialog : Window
         var mode = (IconSourceMode)Math.Max(0, _iconModeCombo.SelectedIndex);
         _presetIconCombo.IsVisible = mode == IconSourceMode.Preset;
         _customIconRow.IsVisible = mode == IconSourceMode.Custom;
+        _exeIconRow.IsVisible = mode == IconSourceMode.Exe;
     }
 
     /// <summary>新增一行备选（第一行：路径 + 浏览 + 删除；第二行：该路径专属参数）。</summary>
@@ -376,6 +404,9 @@ public partial class EditAppDialog : Window
         AppItem.IconPath = mode == IconSourceMode.Custom
             ? ProcessLauncher.CleanPath(_customIconTextBox.Text) ?? string.Empty
             : string.Empty;
+        AppItem.IconExePath = mode == IconSourceMode.Exe
+            ? ProcessLauncher.CleanPath(_exeIconTextBox.Text) ?? string.Empty
+            : string.Empty;
 
         // 清空旧图标，保存后由 RefreshIconsAsync 按新模式重新加载
         AppItem.Icon = null;
@@ -392,11 +423,11 @@ public partial class EditAppDialog : Window
     }
 
     /// <summary>挑选可执行文件，返回未转码的本地路径；取消返回 null。</summary>
-    private async System.Threading.Tasks.Task<string?> PickExeFileAsync()
+    private async System.Threading.Tasks.Task<string?> PickExeFileAsync(string title = "选择应用")
     {
         var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
         {
-            Title = "选择应用",
+            Title = title,
             AllowMultiple = false,
             FileTypeFilter = new[]
             {
@@ -433,6 +464,14 @@ public partial class EditAppDialog : Window
 
         var file = files[0];
         _customIconTextBox.Text = file.TryGetLocalPath() ?? file.Path.LocalPath;
+    }
+
+    /// <summary>挑选用于提取图标的 exe 文件。</summary>
+    private async void ExeIconBrowseButton_Click(object? sender, RoutedEventArgs e)
+    {
+        var localPath = await PickExeFileAsync("选择用于提取图标的程序");
+        if (!string.IsNullOrEmpty(localPath))
+            _exeIconTextBox.Text = localPath;
     }
 
     private System.Threading.Tasks.Task ShowMessage(string title, string message)

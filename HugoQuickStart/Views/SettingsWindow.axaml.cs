@@ -1,8 +1,10 @@
 using System;
+using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.IO;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
+using Avalonia.Threading;
 using HugoQuickStart.Behaviors;
 using HugoQuickStart.Services;
 using HugoQuickStart.ViewModels;
@@ -14,6 +16,10 @@ public partial class SettingsWindow : Window
     private readonly MainViewModel _viewModel;
     /// <summary>初始化下拉选中项时抑制 SelectionChanged 回写，避免误触发保存。</summary>
     private bool _suppressThemeChanged;
+    /// <summary>程序日志页显示的最近日志行。</summary>
+    private readonly ObservableCollection<string> _logLines = new();
+    /// <summary>已排队一次日志刷新，用于合并突发写入。</summary>
+    private bool _logRefreshQueued;
 
     public SettingsWindow(MainViewModel viewModel)
     {
@@ -25,6 +31,11 @@ public partial class SettingsWindow : Window
         VersionText.Text = $"版本 {version?.ToString(3) ?? "1.0.0"}";
 
         AppDirectoryText.Text = AppContext.BaseDirectory;
+
+        // 程序日志页：绑定最近日志，并订阅后续写入以实时刷新
+        LogList.ItemsSource = _logLines;
+        LogService.LogWritten += OnLogWritten;
+        Closed += (_, _) => LogService.LogWritten -= OnLogWritten;
 
         // 依据当前主题选中下拉项（抑制回写，避免构造期触发保存）
         _suppressThemeChanged = true;
@@ -50,6 +61,7 @@ public partial class SettingsWindow : Window
         StackPanelIntroAnimationBehavior.Prepare(PageGeneralPanel);
         StackPanelIntroAnimationBehavior.Prepare(PageAppearancePanel);
         StackPanelIntroAnimationBehavior.Prepare(PageInterceptPanel);
+        StackPanelIntroAnimationBehavior.Prepare(PageLogPanel);
         StackPanelIntroAnimationBehavior.Prepare(PageAboutPanel);
 
         // 窗口尚未显示时先布置淡入 + 缩放的初始状态，避免出现首帧闪烁
@@ -106,6 +118,11 @@ public partial class SettingsWindow : Window
         {
             ShowPage(PageIntercept, PageInterceptPanel);
         }
+        else if (NavList.SelectedItem == NavLog)
+        {
+            ShowPage(PageLog, PageLogPanel);
+            RefreshLog();
+        }
         else if (NavList.SelectedItem == NavAbout)
         {
             ShowPage(PageAbout, PageAboutPanel);
@@ -120,15 +137,67 @@ public partial class SettingsWindow : Window
         StackPanelIntroAnimationBehavior.Prepare(PageGeneralPanel);
         StackPanelIntroAnimationBehavior.Prepare(PageAppearancePanel);
         StackPanelIntroAnimationBehavior.Prepare(PageInterceptPanel);
+        StackPanelIntroAnimationBehavior.Prepare(PageLogPanel);
         StackPanelIntroAnimationBehavior.Prepare(PageAboutPanel);
 
         PageGeneral.IsVisible = ReferenceEquals(page, PageGeneral);
         PageAppearance.IsVisible = ReferenceEquals(page, PageAppearance);
         PageIntercept.IsVisible = ReferenceEquals(page, PageIntercept);
+        PageLog.IsVisible = ReferenceEquals(page, PageLog);
         PageAbout.IsVisible = ReferenceEquals(page, PageAbout);
 
         // 目标页变为可见后，开始错峰入场动画（ClassIsland 每次导航都会重播）
         StackPanelIntroAnimationBehavior.Play(panel);
+    }
+
+    // ================= 程序日志 =================
+
+    /// <summary>日志有新记录时刷新列表（合并突发写入，避免频繁刷新）。</summary>
+    private void OnLogWritten()
+    {
+        if (_logRefreshQueued)
+            return;
+
+        _logRefreshQueued = true;
+        Dispatcher.UIThread.Post(() =>
+        {
+            _logRefreshQueued = false;
+            if (!IsVisible)
+                return;
+            RefreshLog();
+        }, DispatcherPriority.Background);
+    }
+
+    /// <summary>把最近日志同步到列表，并滚动到最后一条。</summary>
+    private void RefreshLog()
+    {
+        _logLines.Clear();
+        foreach (var line in LogService.GetRecent())
+            _logLines.Add(line);
+        LogScroll.ScrollToEnd();
+    }
+
+    private void RefreshLog_OnClick(object? sender, RoutedEventArgs e) => RefreshLog();
+
+    private void ClearLog_OnClick(object? sender, RoutedEventArgs e) => LogService.Clear();
+
+    private void OpenLogFile_OnClick(object? sender, RoutedEventArgs e)
+    {
+        try
+        {
+            Directory.CreateDirectory(LogService.LogDirectory);
+            if (!File.Exists(LogService.LogFilePath))
+                File.WriteAllText(LogService.LogFilePath, string.Empty);
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = LogService.LogFilePath,
+                UseShellExecute = true
+            });
+        }
+        catch
+        {
+            // ignore
+        }
     }
 
     /// <summary>打开配置目录（config.json 所在目录，位于 %APPDATA%，升级不受影响）。</summary>

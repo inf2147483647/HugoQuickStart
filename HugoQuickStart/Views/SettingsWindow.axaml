@@ -97,6 +97,18 @@
                                        Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
                         </Grid>
                     </ListBoxItem>
+                    <ListBoxItem Classes="navitem" x:Name="NavLog">
+                        <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
+                            <TextBlock Text="&#xE81C;"
+                                       FontFamily="Segoe MDL2 Assets, Segoe UI Symbol"
+                                       FontSize="15"
+                                       VerticalAlignment="Center"
+                                       Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+                            <TextBlock Grid.Column="1" Text="程序日志"
+                                       VerticalAlignment="Center"
+                                       Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+                        </Grid>
+                    </ListBoxItem>
                     <ListBoxItem Classes="navitem" x:Name="NavAbout">
                         <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
                             <TextBlock Text="&#xE946;"
@@ -428,6 +440,51 @@
                     </Border>
                 </StackPanel>
             </ScrollViewer>
+
+            <!-- ===== 页面：程序日志 ===== -->
+            <Grid x:Name="PageLog"
+                  IsVisible="False"
+                  RowDefinitions="Auto,*">
+                <StackPanel x:Name="PageLogPanel"
+                            Margin="28,26,28,12" Spacing="8">
+                    <TextBlock Text="程序日志"
+                               FontSize="22"
+                               FontWeight="SemiBold"
+                               Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+                    <TextBlock Text="记录应用初始化、点击图标、点击冷却、修改应用设置等事件，便于排查问题。"
+                               FontSize="12"
+                               Margin="0,0,0,12"
+                               Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <Button Content="刷新" Click="RefreshLog_OnClick"/>
+                        <Button Content="清空" Click="ClearLog_OnClick"/>
+                        <Button Content="打开日志文件" Click="OpenLogFile_OnClick"/>
+                    </StackPanel>
+                </StackPanel>
+
+                <Border Grid.Row="1"
+                        Margin="28,0,28,20"
+                        CornerRadius="8"
+                        Background="{DynamicResource SubtleFillColorTertiaryBrush}">
+                    <ScrollViewer x:Name="LogScroll"
+                                  Padding="12"
+                                  VerticalScrollBarVisibility="Auto">
+                        <ItemsControl x:Name="LogList">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding}"
+                                               FontFamily="Consolas, Cascadia Mono, Courier New"
+                                               FontSize="12"
+                                               TextWrapping="Wrap"
+                                               Margin="0,0,0,2"
+                                               Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+                </Border>
+            </Grid>
 
             <!-- ===== 页面：关于 ===== -->
             <ScrollViewer x:Name="PageAbout"

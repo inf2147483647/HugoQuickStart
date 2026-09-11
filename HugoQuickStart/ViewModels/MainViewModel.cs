@@ -68,6 +68,8 @@ public partial class MainViewModel : ObservableObject
     {
         if (!_suppressThemeSave)
             SaveSettingsOnly();
+        if (!_isLoadingConfig)
+            LogService.Info("设置", $"点击冷却：{(value ? "已启用" : "已禁用")}");
     }
 
     partial void OnLaunchCooldownSecondsChanged(double value)
@@ -82,6 +84,8 @@ public partial class MainViewModel : ObservableObject
 
         if (!_suppressThemeSave)
             SaveSettingsOnly();
+        if (!_isLoadingConfig)
+            LogService.Info("设置", $"点击冷却时长：{value:F1} 秒");
     }
 
     /// <summary>同一图标最近一次成功启动的时间（点击冷却判断依据）。</summary>
@@ -94,6 +98,8 @@ public partial class MainViewModel : ObservableObject
             item.RefreshToolTip();
         if (!_suppressThemeSave)
             SaveSettingsOnly();
+        if (!_isLoadingConfig)
+            LogService.Info("设置", $"图标悬浮提示：{(value ? "已启用" : "已禁用")}");
     }
 
     partial void OnUiScaleChanged(double value)
@@ -109,6 +115,8 @@ public partial class MainViewModel : ObservableObject
         OnPropertyChanged(nameof(ScaledWindowWidth));
         if (!_suppressThemeSave)
             SaveSettingsOnly();
+        if (!_isLoadingConfig)
+            LogService.Info("设置", $"界面缩放：{value:F2}");
     }
 
     /// <summary>主界面窗口宽度 = 基准 370 × 缩放（保证缩放后仍容下一行 5 个图标）。</summary>
@@ -119,6 +127,8 @@ public partial class MainViewModel : ObservableObject
         ThemeService.Apply(ThemeService.Parse(value));
         if (!_suppressThemeSave)
             SaveSettingsOnly();
+        if (!_isLoadingConfig)
+            LogService.Info("设置", $"主题色：{value}");
     }
     
     [ObservableProperty]
@@ -141,6 +151,9 @@ public partial class MainViewModel : ObservableObject
     /// <summary>加载配置期间抑制主题变更触发的回写，避免启动即重复保存。</summary>
     private bool _suppressThemeSave;
 
+    /// <summary>加载配置期间为 true：抑制设置项变更日志，避免启动时输出大量"修改设置"记录。</summary>
+    private bool _isLoadingConfig;
+
     private const int ResolveIntervalSeconds = 20;
 
     public MainViewModel()
@@ -148,6 +161,8 @@ public partial class MainViewModel : ObservableObject
         _configService = new AppConfigService();
         LoadConfig();
         NormalizeMatchKeys();
+        LogService.Info("初始化",
+            $"配置加载完成：快捷入口 {QuickEntries.Count} 项，希沃应用 {XiwoApps.Count} 项");
         _ = InitialLoadAsync();
     }
 
@@ -205,6 +220,7 @@ public partial class MainViewModel : ObservableObject
             {
                 app.Path = resolved;
                 changed = true;
+                LogService.Info("初始化", $"自动匹配「{app.Name}」→ {resolved}");
             }
         }
 
@@ -239,6 +255,7 @@ public partial class MainViewModel : ObservableObject
 
     private void LoadConfig()
     {
+        _isLoadingConfig = true;
         var config = _configService.Load();
         QuickEntries = new ObservableCollection<AppItem>(config.QuickEntries);
         XiwoApps = new ObservableCollection<AppItem>(config.XiwoApps);
@@ -253,6 +270,7 @@ public partial class MainViewModel : ObservableObject
         LaunchCooldownEnabled = config.LaunchCooldownEnabled;
         LaunchCooldownSeconds = config.LaunchCooldownSeconds <= 0 ? 1.0 : config.LaunchCooldownSeconds;
         _suppressThemeSave = false;
+        _isLoadingConfig = false;
     }
 
     public void SaveConfig()
@@ -295,6 +313,7 @@ public partial class MainViewModel : ObservableObject
     /// <summary>
     /// 为所有还没有图标的条目补图，按 IconMode 分流：
     /// Custom=用户选择的图片文件（IconPath）；Preset=内嵌资源图标（IconKey）；
+    /// Exe=从用户选择的 exe 文件提取图标（IconExePath）；
     /// Auto=从 EXE 提取真实图标，协议链接回退内置图标。全部失败保持占位符。
     /// </summary>
     public async Task RefreshIconsAsync()
@@ -304,7 +323,8 @@ public partial class MainViewModel : ObservableObject
             .Where(item => item.Icon == null &&
                            (!string.IsNullOrWhiteSpace(item.Path) ||
                             !string.IsNullOrWhiteSpace(item.IconKey) ||
-                            !string.IsNullOrWhiteSpace(item.IconPath)))
+                            !string.IsNullOrWhiteSpace(item.IconPath) ||
+                            !string.IsNullOrWhiteSpace(item.IconExePath)))
             .ToList();
 
         foreach (var item in pending)
@@ -315,6 +335,11 @@ public partial class MainViewModel : ObservableObject
             if (mode == IconSourceMode.Custom)
             {
                 icon = await Task.Run(() => AppIconLoader.LoadFromFile(item.IconPath));
+            }
+            else if (mode == IconSourceMode.Exe)
+            {
+                if (!string.IsNullOrWhiteSpace(item.IconExePath))
+                    icon = await Task.Run(() => AppIconLoader.ExtractForPath(item.IconExePath));
             }
             else if (mode == IconSourceMode.Preset)
             {
@@ -362,6 +387,7 @@ public partial class MainViewModel : ObservableObject
     private void LaunchApp(AppItem? app)
     {
         if (app == null) return;
+        LogService.Info("点击", $"点击图标「{app.Name}」");
         if (IsEditMode)
         {
             ShowStatus("编辑模式下点击无效，请先退出编辑模式");
@@ -377,6 +403,7 @@ public partial class MainViewModel : ObservableObject
         // 点击冷却：同一图标在冷却时间内不可重复启动，避免手速过快导致应用多重启动
         if (LaunchCooldownEnabled && IsInCooldown(app))
         {
+            LogService.Info("冷却", $"「{app.Name}」处于冷却中（{LaunchCooldownSeconds:F1} 秒），忽略本次点击");
             ShowStatus("应用已经在启动了，请耐心等待~");
             return;
         }
@@ -407,10 +434,12 @@ public partial class MainViewModel : ObservableObject
             var usedFallback = !string.Equals(candidate.Path, app.Path, StringComparison.OrdinalIgnoreCase);
             var suffix = usedFallback ? "（已使用备选路径）" : string.Empty;
             MarkLaunched(app);
+            LogService.Info("启动", $"已启动「{app.Name}」：{candidate.Path}{suffix}");
             ShowStatus(hint ?? $"正在启动「{app.Name}」...{suffix}");
             return;
         }
 
+        LogService.Warn("启动", $"启动失败「{app.Name}」：路径无效");
         ShowStatus($"启动失败：「{app.Name}」路径无效，点击 ✎ 修改路径");
     }
 
@@ -495,6 +524,7 @@ public partial class MainViewModel : ObservableObject
             IconPath = ""
         });
         SaveConfig();
+        LogService.Info("设置", "新增快捷入口「新应用」");
     }
 
     [RelayCommand]
@@ -508,6 +538,7 @@ public partial class MainViewModel : ObservableObject
             IconPath = ""
         });
         SaveConfig();
+        LogService.Info("设置", "新增希沃应用「新应用」");
     }
 
     [RelayCommand]
@@ -517,16 +548,21 @@ public partial class MainViewModel : ObservableObject
         QuickEntries.Remove(app);
         XiwoApps.Remove(app);
         SaveConfig();
+        LogService.Info("设置", $"删除应用「{app.Name}」");
     }
 
     partial void OnAutoStartChanged(bool value)
     {
         StartupService.SetAutoStart(value);
         SaveConfig();
+        if (!_isLoadingConfig)
+            LogService.Info("设置", $"开机自启：{(value ? "已启用" : "已禁用")}");
     }
 
     partial void OnBlockSeewoAssistantWindowChanged(bool value)
     {
         SaveConfig();
+        if (!_isLoadingConfig)
+            LogService.Info("设置", $"拦截希沃悬浮窗：{(value ? "已启用" : "已禁用")}");
     }
 }

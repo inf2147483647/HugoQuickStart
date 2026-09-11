@@ -28,14 +28,26 @@ public class AppConfigService
     public static string ConfigDirectory =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "HugoQuickStart");
 
-    /// <summary>旧版本把 config.json 放在安装目录（exe 旁），首次运行时自动迁移。</summary>
+    /// <summary>
+    /// 旧版本把 config.json 放在安装目录（exe 旁）。若用户目录尚无配置则迁移过来；
+    /// 若用户目录已有配置（权威来源），则清除安装目录的残留旧文件——
+    /// 避免升级安装时安装包误覆盖/误读，也避免用户误以为配置仍在那里。
+    /// </summary>
     private static void MigrateLegacyConfig()
     {
         try
         {
             var newPath = Path.Combine(ConfigDirectory, "config.json");
             var legacyPath = Path.Combine(AppContext.BaseDirectory, "config.json");
-            if (!File.Exists(newPath) && File.Exists(legacyPath))
+
+            if (File.Exists(newPath))
+            {
+                if (File.Exists(legacyPath))
+                    File.Delete(legacyPath);
+                return;
+            }
+
+            if (File.Exists(legacyPath))
             {
                 File.Copy(legacyPath, newPath, overwrite: false);
                 File.Delete(legacyPath);

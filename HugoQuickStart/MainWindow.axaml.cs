@@ -238,6 +238,7 @@ public partial class MainWindow : Window
 
         StartBottomMostMaintenance();
         StartSeewoBlocker();
+        LogService.Info("初始化", "主界面已加载并显示");
     }
 
     /// <summary>
@@ -738,7 +739,12 @@ public partial class MainWindow : Window
         }
     }
 
-    /// <summary>还原并前置主界面，隐藏悬浮球。</summary>
+    /// <summary>
+    /// 还原并显示主界面，隐藏悬浮球。
+    /// 不调用 Activate()：本窗是"始终置底"的桌面面板，激活会把它抬到其它窗口之上，
+    /// 且活动期间置底守卫会暂停维护，导致窗口停在高层级。Show() 本身也会临时抬层，
+    /// 因此显示后立即压回底层，保持与正常运行一致的 Z 序。
+    /// </summary>
     private void RestoreMainWindow()
     {
         Show();
@@ -746,7 +752,7 @@ public partial class MainWindow : Window
             WindowState = WindowState.Normal;
         PositionWindowBottomRight();
         HideFloatBall();
-        Activate();
+        SendToBottom();
     }
 
     /// <summary>最小化到托盘：隐藏主窗口并显示右下角悬浮球。</summary>
@@ -875,6 +881,7 @@ public partial class MainWindow : Window
             if (result == true)
             {
                 _viewModel.SaveConfig();
+                LogService.Info("设置", $"修改快捷入口「{appItem.Name}」");
             }
         }
     }
@@ -887,6 +894,7 @@ public partial class MainWindow : Window
             if (result == true)
             {
                 _viewModel.SaveConfig();
+                LogService.Info("设置", $"修改希沃应用「{appItem.Name}」");
             }
         }
     }
@@ -901,6 +909,7 @@ public partial class MainWindow : Window
             newApp.Category = "快捷入口";
             _viewModel.QuickEntries.Add(newApp);
             _viewModel.SaveConfig();
+            LogService.Info("设置", $"新增快捷入口「{newApp.Name}」");
         }
     }
 
@@ -914,6 +923,7 @@ public partial class MainWindow : Window
             newApp.Category = "希沃软件";
             _viewModel.XiwoApps.Add(newApp);
             _viewModel.SaveConfig();
+            LogService.Info("设置", $"新增希沃应用「{newApp.Name}」");
         }
     }
 }

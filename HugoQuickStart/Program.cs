@@ -3,6 +3,7 @@ using System;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
+using HugoQuickStart.Services;
 
 namespace HugoQuickStart;
 
@@ -21,7 +22,13 @@ class Program
     public static void Main(string[] args)
     {
         if (!AcquireSingleInstance())
+        {
+            LogService.Info("初始化", "检测到已有实例正在运行，本次启动已退出");
             return;
+        }
+
+        LogService.Info("初始化",
+            $"应用启动（版本 {typeof(Program).Assembly.GetName().Version?.ToString(3) ?? "1.0.0"}）");
 
         AppDomain.CurrentDomain.UnhandledException += (_, e) =>
         {
@@ -80,6 +87,7 @@ class Program
             var logPath = Path.Combine(AppContext.BaseDirectory, "crash.log");
             File.AppendAllText(logPath,
                 $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] [{source}] {ex}{Environment.NewLine}{Environment.NewLine}");
+            LogService.Error("未处理异常", $"[{source}] {ex}");
         }
         catch
         {

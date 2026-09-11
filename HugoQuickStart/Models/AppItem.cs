@@ -15,7 +15,9 @@ public enum IconSourceMode
     /// <summary>预设：使用内置预设图标（IconKey）。</summary>
     Preset,
     /// <summary>自定义：使用用户选择的图片文件（IconPath）。</summary>
-    Custom
+    Custom,
+    /// <summary>从 EXE 提取：从用户选择的 exe 文件提取真实图标（IconExePath）。</summary>
+    Exe
 }
 
 /// <summary>
@@ -74,6 +76,7 @@ public class AppItem : INotifyPropertyChanged
     private string _name = string.Empty;
     private string _path = string.Empty;
     private string _iconPath = string.Empty;
+    private string _iconExePath = string.Empty;
     private string _category = string.Empty;
     private string _arguments = string.Empty;
     private string _matchKey = string.Empty;
@@ -99,6 +102,16 @@ public class AppItem : INotifyPropertyChanged
     {
         get => _iconPath;
         set { _iconPath = value; OnPropertyChanged(nameof(IconPath)); }
+    }
+
+    /// <summary>
+    /// 用于提取图标的 EXE 文件路径（IconMode=Exe 时生效）。
+    /// 与启动路径无关，仅用于从该程序提取真实图标。持久化到配置文件。
+    /// </summary>
+    public string IconExePath
+    {
+        get => _iconExePath;
+        set { _iconExePath = value; OnPropertyChanged(nameof(IconExePath)); }
     }
 
     public string Category
@@ -134,7 +147,7 @@ public class AppItem : INotifyPropertyChanged
     }
 
     /// <summary>
-    /// 图标来源模式：<see cref="IconSourceMode"/> 的名称（Auto/Preset/Custom）。
+    /// 图标来源模式：<see cref="IconSourceMode"/> 的名称（Auto/Preset/Custom/Exe）。
     /// 默认 Auto（从目标 exe 自动提取）。持久化到配置文件。
     /// </summary>
     public string IconMode

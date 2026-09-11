@@ -1,4 +1,4 @@
-﻿<#
+<#
 .SYNOPSIS
     HugoQuickStart 一键构建 + 发布 + 生成安装包（正式方案：HugoQuickStart_publish 目录）
 .DESCRIPTION
@@ -56,12 +56,6 @@ if ($LASTEXITCODE -ne 0) { throw "构建失败（退出码 $LASTEXITCODE）。" 
 if (-not $NoPublish) {
     # --- 4. 自包含发布到 publish（目录形式，含完整运行时；不打包 config.json） ---
     Write-Host "---- [2/3] 发布(自包含 win-x64) -> publish ----" -ForegroundColor Cyan
-    # 若发布目录中残留 config.json（运行程序时生成），先备份并从打包源移除，避免覆盖用户数据
-    if (Test-Path (Join-Path $pubDir 'config.json')) {
-        Copy-Item (Join-Path $pubDir 'config.json') $bak -Force
-        Remove-Item (Join-Path $pubDir 'config.json') -Force
-        Write-Host "发布目录中的 config.json 已备份到 $bak（不会打入安装包）" -ForegroundColor Yellow
-    }
     # 清空旧发布产物，避免残留过时文件
     if (Test-Path $pubDir) { Get-ChildItem $pubDir -Force | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue }
     # DebugType=none：不生成 PDB（libSkiaSharp.pdb 等约 100MB，安装包无用的调试符号）
@@ -78,6 +72,24 @@ if (-not $NoPublish) {
     Write-Host "---- 已跳过发布步 (NoPublish) ----" -ForegroundColor Gray
     if (-not (Test-Path $pubDir)) { throw "publish\ 不存在且已跳过发布，无法打安装包。" }
 }
+
+# --- 4.5 安装包安全闸：确保发布目录不含用户数据（config.json / 日志） ---
+# 老版本把 config.json 放在 exe 旁，若被打进安装包，升级时会覆盖用户既有配置。
+# 无论是否执行发布步，这里都做一次兜底清理，保证安装包绝不携带用户数据。
+$userData = Get-ChildItem $pubDir -Recurse -File -ErrorAction SilentlyContinue | Where-Object {
+    $_.Name -eq 'config.json' -or $_.Name -like 'config.json.*' -or
+    $_.Name -eq 'crash.log' -or $_.Name -like 'app.log*' -or $_.Name -eq 'seewo-blocker.log'
+}
+if ($userData) {
+    if (Test-Path (Join-Path $pubDir 'config.json')) {
+        Copy-Item (Join-Path $pubDir 'config.json') $bak -Force
+        Write-Host "发布目录中的 config.json 已备份到 $bak" -ForegroundColor Yellow
+    }
+    $userData | Remove-Item -Force -ErrorAction SilentlyContinue
+    Write-Host ("已从发布目录移除 {0} 个用户数据文件，安装包不会覆盖用户配置" -f $userData.Count) -ForegroundColor Yellow
+}
+$stillThere = Get-ChildItem $pubDir -Recurse -File -ErrorAction SilentlyContinue | Where-Object { $_.Name -eq 'config.json' }
+if ($stillThere) { throw "发布目录仍存在 config.json，已中止以免安装包覆盖用户配置。" }
 
 # --- 5. 编译安装包 ---
 Write-Host "---- [3/3] 生成安装包 (ISCC) ----" -ForegroundColor Cyan
