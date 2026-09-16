@@ -22,6 +22,8 @@ public partial class MainWindow : Window
 {
     private MainViewModel _viewModel = null!;
     private DispatcherTimer? _bottomTimer;
+    /// <summary>置底维护 Tick 计数，用于把位置校准降频到约 2s 一次（见 AnchorCalibrationTicks）。</summary>
+    private int _anchorTickCounter;
     private int _dialogCount;
     private bool _allowClose;
     private bool _isCloseConfirmShown;
@@ -50,6 +52,16 @@ public partial class MainWindow : Window
     private const int TipIdleMs = 1000;
     private const int TipFadeMs = 250;
     private const double TipStillThreshold = 4.0;
+
+    /// <summary>
+    /// 置底维护定时器间隔（毫秒）。对齐参考项目 AdvancedTimeIsland 的 Every1Ms 档：
+    /// 该 Tick 只做"探测 + 按需置底"（无变化不调用 SetWindowPos），稳态下零副作用，
+    /// 因此即使 1ms 也不会周期性重排 Z 序造成闪烁；被外部抬层后 ≤1ms 即可回落。
+    /// </summary>
+    private const int BottomMaintenanceIntervalMs = 1;
+
+    /// <summary>位置校准的降频周期（Tick 次数）：1ms Tick × 2000 ≈ 2s，仅兜底工作区/DPI 变化。</summary>
+    private const int AnchorCalibrationTicks = 2000;
 
     public MainWindow()
     {
@@ -326,28 +338,47 @@ public partial class MainWindow : Window
         var x = workingArea.X + workingArea.Width - (int)(width * scale) - (int)(20 * scale);
         var y = workingArea.Y + workingArea.Height - (int)(height * scale) - (int)(20 * scale);
 
-        Position = new PixelPoint(x, y);
+        // 幂等：位置未变化则不写。维护 Tick 频率很高（1ms），若每 Tick 都赋 Position，
+        // 等价于持续 SetWindowPos 移动窗口 → 与 DWM 合成争抢，造成闪烁/抖动。
+        var target = new PixelPoint(x, y);
+        if (Position == target)
+            return;
+
+        Position = target;
     }
 
     /// <summary>
-    /// 保持窗口置底（位于其它普通窗口之下）。
-    /// 不再信任"已置底"布尔标志——外部行为（Alt+Tab、其它窗口最小化/还原、
-    /// 新窗口插入）可能在没有 Activated 事件的情况下把本窗抬起来，标志会永久失真。
-    /// 改为：定时器 tick 时通过 GetWindow(GW_HWNDPREV) 向上扫描**真实 Z 序**，
-    /// 仅当确实被抬到其它进程的非置顶窗口之上时才重新置底（无变化则零 SetWindowPos 调用，不闪烁）。
-    /// 另注册 EVENT_SYSTEM_FOREGROUND 全局钩子，在任意窗口切换到前台时即时反应式置底。
+    /// 保持窗口置底（位于其它普通窗口之下）。移植 AdvancedTimeIsland 的四层防线，
+    /// 每层都"先探测真实 Z 序、确认被抬起才置底"，因此静止期间零 SetWindowPos、不闪烁：
+    ///  1) WS_EX_NOACTIVATE（<see cref="ApplyNoActivateStyle"/>）：从源头阻断"激活 → 被系统强制提升"；
+    ///  2) WndProc 子类化（<see cref="AttachWndProcHook"/>）：本窗 Z 序被改时即时压回，
+    ///     可捕获不产生前台/焦点事件的重排；
+    ///  3) EVENT_SYSTEM_FOREGROUND 钩子（<see cref="RegisterForegroundHook"/>）：任意窗口切前台时即时压回；
+    ///  4) 高频维护定时器：周期兜底探测（参考其 Every1Ms 档），无变化时不触碰 Z 序。
+    /// 不信任"已置底"布尔标志——它会在无焦点事件的外部抬层后永久失真，导致窗口赖在前面不回落。
     /// </summary>
     private void StartBottomMostMaintenance()
     {
         if (!OperatingSystem.IsWindows())
             return;
 
+        // 0) 扩展样式自愈：置底窗口置 WS_EX_NOACTIVATE，阻断"激活 → 系统强制提升 z-order"这一
+        //    置底失效主因（参考 AdvancedTimeIsland ApplyWindowLayer 第一步）。
+        ApplyNoActivateStyle();
+
         SendToBottom();
         RegisterForegroundHook();
+        // 消息驱动层（参考 AdvancedTimeIsland Mode 0）：子类化 WndProc 拦截 WM_WINDOWPOSCHANGED，
+        // 捕获"不产生前台/焦点事件"的外部抬层（Shell 重排、其它窗口最小化/还原、Alt+Tab 等）。
+        // 此前该方法只有定义与解挂、从未挂载，导致唯一能即时发现此类抬层的路径全程失效——
+        // 只剩 2s 定时器兜底，"置底失效"由此而来。
+        AttachWndProcHook();
 
-        _bottomTimer = new DispatcherTimer
+        _bottomTimer = new DispatcherTimer(DispatcherPriority.Background)
         {
-            Interval = TimeSpan.FromSeconds(2)
+            // 对齐 AdvancedTimeIsland Every1Ms 档：探测式（无变化不调用 SetWindowPos），
+            // 稳态下零副作用，被抬层后 ≤1ms 即回落。
+            Interval = TimeSpan.FromMilliseconds(BottomMaintenanceIntervalMs)
         };
         _bottomTimer.Tick += (_, _) =>
         {
@@ -355,11 +386,27 @@ public partial class MainWindow : Window
             if (IsActive || _dialogCount > 0 || _isCloseConfirmShown)
                 return;
 
-            // 真实探测：只有确实被抬起来才重设 Z 序；否则仅校准位置
+            // 窗口不可见（最小化到托盘）时无 Z 序可维护：直接跳过。
+            // 否则隐藏窗口的探测恒为"被抬起"，会在高频 Tick 下持续做无谓的 SetWindowPos。
+            if (!IsVisible)
+                return;
+
+            // 样式自愈：Avalonia 在 Show/属性变更时会重写 GWL_EXSTYLE 抹掉 NOACTIVATE，
+            // 需持续补写（值相同不写，不触发 DWM 重评估，故高频 Tick 下无额外开销）。
+            ApplyNoActivateStyle();
+
+            // 真实探测：只有确实被抬起来才重设 Z 序（与参考实现一致，高频路径只碰 Z 序/样式）
             if (IsRaisedAboveForeignWindow())
                 SendToBottom();
-            else
+
+            // 位置校准降频：常态由 LayoutUpdated 在窗口尺寸变化时立即重锚，
+            // 这里只兜底"工作区/DPI 变化"（任务栏增删、分辨率切换）——1ms Tick 下每
+            // AnchorCalibrationTicks 次校准一次（≈2s），避免高频查询显示器布局。
+            if (++_anchorTickCounter >= AnchorCalibrationTicks)
+            {
+                _anchorTickCounter = 0;
                 PositionWindowBottomRight();
+            }
         };
         _bottomTimer.Start();
     }
@@ -463,17 +510,7 @@ public partial class MainWindow : Window
                 return;
 
             // 1) 幂等添加 WS_EX_NOACTIVATE（值未变化则不写，防 DWM 重合成闪烁）
-            try
-            {
-                var exStyle = (int)(long)GetWindowLongPtr(hwnd, GWL_EXSTYLE);
-                var target = exStyle | WS_EX_NOACTIVATE;
-                if (target != exStyle)
-                    SetWindowLongPtr(hwnd, GWL_EXSTYLE, (IntPtr)target);
-            }
-            catch
-            {
-                // ignore
-            }
+            ApplyNoActivateStyle();
 
             // HWND_BOTTOM = (IntPtr)1
             SetWindowPos(hwnd, new IntPtr(1), 0, 0, 0, 0,
@@ -487,6 +524,33 @@ public partial class MainWindow : Window
         finally
         {
             Interlocked.Decrement(ref _inSendToBottom);
+        }
+    }
+
+    /// <summary>
+    /// 幂等地给窗口补上 WS_EX_NOACTIVATE 扩展样式（值未变化则不写 GWL_EXSTYLE）。
+    /// 置底窗口一旦被激活，Windows 会强制提升其 z-order，即使高频重设 Z 序也压不住；
+    /// 置此位后点击/悬停不激活本窗，从源头杜绝"被激活 → 被提升"。
+    /// 与"是否需要置底"解耦、单独调用：Avalonia 在 Show 流程/窗口属性变更时会重写
+    /// GWL_EXSTYLE 抹掉该位，因此需由维护 Tick 持续补写实现自愈；
+    /// 因"值相同不写"，高频调用不会触发 DWM 重评估合成分层，故不产生闪烁。
+    /// </summary>
+    private void ApplyNoActivateStyle()
+    {
+        try
+        {
+            var hwnd = TryGetPlatformHandle()?.Handle ?? IntPtr.Zero;
+            if (hwnd == IntPtr.Zero)
+                return;
+
+            var exStyle = (int)(long)GetWindowLongPtr(hwnd, GWL_EXSTYLE);
+            var target = exStyle | WS_EX_NOACTIVATE;
+            if (target != exStyle)
+                SetWindowLongPtr(hwnd, GWL_EXSTYLE, (IntPtr)target);
+        }
+        catch
+        {
+            // ignore
         }
     }
 

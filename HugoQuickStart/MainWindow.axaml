@@ -102,7 +102,7 @@
                 <StackPanel Margin="12,8,12,12" Spacing="16">
 
                     <!-- Quick Entries Section -->
-                    <StackPanel Spacing="8">
+                    <StackPanel Spacing="8" IsVisible="{Binding !HideQuickEntries}">
                         <TextBlock Text="快捷入口"
                                    FontSize="13"
                                    FontWeight="SemiBold"

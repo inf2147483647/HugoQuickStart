@@ -56,6 +56,10 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty]
     private bool _showIconToolTips = false;
 
+    /// <summary>隐藏快捷入口：开启后主界面不展示“快捷入口”分组。默认关闭。</summary>
+    [ObservableProperty]
+    private bool _hideQuickEntries = false;
+
     /// <summary>点击冷却开关：同一图标在冷却时间内不可重复启动，避免手速过快导致应用多重启动。默认关闭。</summary>
     [ObservableProperty]
     private bool _launchCooldownEnabled = false;
@@ -100,6 +104,14 @@ public partial class MainViewModel : ObservableObject
             SaveSettingsOnly();
         if (!_isLoadingConfig)
             LogService.Info("设置", $"图标悬浮提示：{(value ? "已启用" : "已禁用")}");
+    }
+
+    partial void OnHideQuickEntriesChanged(bool value)
+    {
+        if (!_suppressThemeSave)
+            SaveSettingsOnly();
+        if (!_isLoadingConfig)
+            LogService.Info("设置", $"隐藏快捷入口：{(value ? "已启用" : "已禁用")}");
     }
 
     partial void OnUiScaleChanged(double value)
@@ -259,56 +271,52 @@ public partial class MainViewModel : ObservableObject
         var config = _configService.Load();
         QuickEntries = new ObservableCollection<AppItem>(config.QuickEntries);
         XiwoApps = new ObservableCollection<AppItem>(config.XiwoApps);
+
+        // 加载阶段抑制所有属性变更回调的回写：此时其它设置项仍是字段默认值，
+        // 若中途触发 SaveConfig() 会用“半默认”状态覆盖磁盘上的用户配置。
+        _suppressThemeSave = true;
         AutoStart = config.AutoStart;
         BlockSeewoAssistantWindow = config.BlockSeewoAssistantWindow;
-
-        // 加载阶段抑制回写；应用已保存的主题色与界面缩放
-        _suppressThemeSave = true;
         ThemeMode = string.IsNullOrWhiteSpace(config.ThemeMode) ? "System" : config.ThemeMode;
         UiScale = Math.Clamp(config.UiScale <= 0 ? 1.0 : config.UiScale, 0.80, 1.50);
         ShowIconToolTips = config.ShowIconToolTips;
+        HideQuickEntries = config.HideQuickEntries;
         LaunchCooldownEnabled = config.LaunchCooldownEnabled;
         LaunchCooldownSeconds = config.LaunchCooldownSeconds <= 0 ? 1.0 : config.LaunchCooldownSeconds;
         _suppressThemeSave = false;
         _isLoadingConfig = false;
+
+        // 全部加载完成后再统一对外“生效”：
+        // 1) 以配置文件为权威来源对账自启注册表（加载期回调被抑制，未逐项同步）；
+        // 2) 落盘一次，补齐旧版本缺失字段、固化归一化结果，且写入的必是完整状态。
+        StartupService.SetAutoStart(AutoStart);
+        _configService.Save(BuildConfig());
     }
+
+    /// <summary>把当前内存中的完整状态组装为可持久化的配置对象（单一出口，避免保存时漏字段）。</summary>
+    private AppConfig BuildConfig() => new()
+    {
+        QuickEntries = new List<AppItem>(QuickEntries),
+        XiwoApps = new List<AppItem>(XiwoApps),
+        AutoStart = AutoStart,
+        BlockSeewoAssistantWindow = BlockSeewoAssistantWindow,
+        ThemeMode = ThemeMode,
+        UiScale = UiScale,
+        ShowIconToolTips = ShowIconToolTips,
+        HideQuickEntries = HideQuickEntries,
+        LaunchCooldownEnabled = LaunchCooldownEnabled,
+        LaunchCooldownSeconds = LaunchCooldownSeconds
+    };
 
     public void SaveConfig()
     {
-        var config = new AppConfig
-        {
-            QuickEntries = new List<AppItem>(QuickEntries),
-            XiwoApps = new List<AppItem>(XiwoApps),
-            AutoStart = AutoStart,
-            BlockSeewoAssistantWindow = BlockSeewoAssistantWindow,
-            ThemeMode = ThemeMode,
-            UiScale = UiScale,
-            ShowIconToolTips = ShowIconToolTips,
-            LaunchCooldownEnabled = LaunchCooldownEnabled,
-            LaunchCooldownSeconds = LaunchCooldownSeconds
-        };
-        _configService.Save(config);
+        _configService.Save(BuildConfig());
         // 配置可能被修改（新增/编辑路径），重新加载缺失的图标
         _ = RefreshIconsAsync();
     }
 
     /// <summary>仅持久化设置项（主题/缩放等），不触发图标刷新。供高频变更的 UI 控件使用。</summary>
-    private void SaveSettingsOnly()
-    {
-        var config = new AppConfig
-        {
-            QuickEntries = new List<AppItem>(QuickEntries),
-            XiwoApps = new List<AppItem>(XiwoApps),
-            AutoStart = AutoStart,
-            BlockSeewoAssistantWindow = BlockSeewoAssistantWindow,
-            ThemeMode = ThemeMode,
-            UiScale = UiScale,
-            ShowIconToolTips = ShowIconToolTips,
-            LaunchCooldownEnabled = LaunchCooldownEnabled,
-            LaunchCooldownSeconds = LaunchCooldownSeconds
-        };
-        _configService.Save(config);
-    }
+    private void SaveSettingsOnly() => _configService.Save(BuildConfig());
 
     /// <summary>
     /// 为所有还没有图标的条目补图，按 IconMode 分流：
@@ -553,16 +561,23 @@ public partial class MainViewModel : ObservableObject
 
     partial void OnAutoStartChanged(bool value)
     {
+        // 加载配置期间不回写：此时其它设置项尚未加载完，SaveConfig() 会把半默认状态
+        // 覆盖到磁盘。加载完成后由 LoadConfig 统一对账注册表并落盘。
+        if (_isLoadingConfig)
+            return;
+
         StartupService.SetAutoStart(value);
         SaveConfig();
-        if (!_isLoadingConfig)
-            LogService.Info("设置", $"开机自启：{(value ? "已启用" : "已禁用")}");
+        LogService.Info("设置", $"开机自启：{(value ? "已启用" : "已禁用")}");
     }
 
     partial void OnBlockSeewoAssistantWindowChanged(bool value)
     {
+        // 同上：加载期不同步磁盘，避免用半加载状态覆盖用户配置。
+        if (_isLoadingConfig)
+            return;
+
         SaveConfig();
-        if (!_isLoadingConfig)
-            LogService.Info("设置", $"拦截希沃悬浮窗：{(value ? "已启用" : "已禁用")}");
+        LogService.Info("设置", $"拦截希沃悬浮窗：{(value ? "已启用" : "已禁用")}");
     }
 }

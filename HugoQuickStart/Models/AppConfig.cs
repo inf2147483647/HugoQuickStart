@@ -21,6 +21,9 @@ public class AppConfig
     /// <summary>图标悬浮提示：悬停显示备注（备注为空则显示 exe 绝对路径）。默认关闭。持久化到配置文件。</summary>
     public bool ShowIconToolTips { get; set; } = false;
 
+    /// <summary>隐藏快捷入口：开启后主界面不展示“快捷入口”分组，仅显示希沃软件。默认关闭。持久化到配置文件。</summary>
+    public bool HideQuickEntries { get; set; } = false;
+
     /// <summary>点击冷却开关：同一图标在冷却时间内不可重复启动，防止手速过快导致应用多重启动。默认关闭。持久化到配置文件。</summary>
     public bool LaunchCooldownEnabled { get; set; } = false;
 
