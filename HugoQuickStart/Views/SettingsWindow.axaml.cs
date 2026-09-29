@@ -62,6 +62,7 @@ public partial class SettingsWindow : Window
         StackPanelIntroAnimationBehavior.Prepare(PageAppearancePanel);
         StackPanelIntroAnimationBehavior.Prepare(PageInterceptPanel);
         StackPanelIntroAnimationBehavior.Prepare(PageLogPanel);
+        StackPanelIntroAnimationBehavior.Prepare(PageBackupPanel);
         StackPanelIntroAnimationBehavior.Prepare(PageAboutPanel);
 
         // 窗口尚未显示时先布置淡入 + 缩放的初始状态，避免出现首帧闪烁
@@ -123,6 +124,11 @@ public partial class SettingsWindow : Window
             ShowPage(PageLog, PageLogPanel);
             RefreshLog();
         }
+        else if (NavList.SelectedItem == NavBackup)
+        {
+            ShowPage(PageBackup, PageBackupPanel);
+            RefreshBackupStatus();
+        }
         else if (NavList.SelectedItem == NavAbout)
         {
             ShowPage(PageAbout, PageAboutPanel);
@@ -138,12 +144,14 @@ public partial class SettingsWindow : Window
         StackPanelIntroAnimationBehavior.Prepare(PageAppearancePanel);
         StackPanelIntroAnimationBehavior.Prepare(PageInterceptPanel);
         StackPanelIntroAnimationBehavior.Prepare(PageLogPanel);
+        StackPanelIntroAnimationBehavior.Prepare(PageBackupPanel);
         StackPanelIntroAnimationBehavior.Prepare(PageAboutPanel);
 
         PageGeneral.IsVisible = ReferenceEquals(page, PageGeneral);
         PageAppearance.IsVisible = ReferenceEquals(page, PageAppearance);
         PageIntercept.IsVisible = ReferenceEquals(page, PageIntercept);
         PageLog.IsVisible = ReferenceEquals(page, PageLog);
+        PageBackup.IsVisible = ReferenceEquals(page, PageBackup);
         PageAbout.IsVisible = ReferenceEquals(page, PageAbout);
 
         // 目标页变为可见后，开始错峰入场动画（ClassIsland 每次导航都会重播）
@@ -198,6 +206,50 @@ public partial class SettingsWindow : Window
         {
             // ignore
         }
+    }
+
+    // ================= 备份设置 =================
+
+    /// <summary>手动备份：不受周期与数量上限约束，立即生成一份备份。</summary>
+    private void BackupNow_OnClick(object? sender, RoutedEventArgs e)
+    {
+        var path = ConfigBackupService.CreateBackup(manual: true);
+        RefreshBackupStatus(path == null
+            ? "手动备份失败：未能读取配置或写入备份目录，详见程序日志。"
+            : $"已创建手动备份：{Path.GetFileName(path)}");
+    }
+
+    /// <summary>打开备份目录；目录不存在时先创建。</summary>
+    private void OpenBackupDirectory_OnClick(object? sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var dir = ConfigBackupService.BackupDirectory;
+            Directory.CreateDirectory(dir);
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = dir,
+                UseShellExecute = true
+            });
+        }
+        catch
+        {
+            // ignore
+        }
+    }
+
+    /// <summary>刷新备份状态文案：现有备份份数与最近一次自动备份时间；prefix 用于附加刚完成的操作结果。</summary>
+    private void RefreshBackupStatus(string? prefix = null)
+    {
+        var autos = ConfigBackupService.GetBackups(autoOnly: true);
+        var total = ConfigBackupService.GetBackups(autoOnly: false).Count;
+        var last = ConfigBackupService.GetLastAutoBackupTime();
+
+        var summary = last.HasValue
+            ? $"自动备份 {autos.Count} 份（最近一次：{last.Value:yyyy-MM-dd HH:mm}），手动备份 {total - autos.Count} 份。"
+            : $"暂无自动备份，手动备份 {total - autos.Count} 份。";
+
+        BackupStatusText.Text = string.IsNullOrEmpty(prefix) ? summary : $"{prefix}{Environment.NewLine}{summary}";
     }
 
     /// <summary>打开配置目录（config.json 所在目录，位于 %APPDATA%，升级不受影响）。</summary>

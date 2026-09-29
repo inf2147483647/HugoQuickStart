@@ -82,6 +82,7 @@ public class AppItem : INotifyPropertyChanged
     private string _matchKey = string.Empty;
     private string _iconKey = string.Empty;
     private string _remark = string.Empty;
+    private string _hotkey = string.Empty;
     private string _iconMode = nameof(IconSourceMode.Auto);
     private List<LaunchCandidate> _fallbackPaths = new();
     private Bitmap? _icon;
@@ -163,6 +164,17 @@ public class AppItem : INotifyPropertyChanged
     {
         get => _remark;
         set { _remark = value; OnPropertyChanged(nameof(Remark)); OnPropertyChanged(nameof(ToolTipText)); }
+    }
+
+    /// <summary>
+    /// 全局快捷键文本（如 "Ctrl+Alt+A"）。空字符串表示未设置。
+    /// 支持 Ctrl / Alt / Shift 与字母、数字、F1–F24 的组合；规范化由
+    /// <see cref="Services.GlobalHotkeyService"/> 负责。持久化到配置文件。
+    /// </summary>
+    public string Hotkey
+    {
+        get => _hotkey;
+        set { _hotkey = value; OnPropertyChanged(nameof(Hotkey)); }
     }
 
     /// <summary>

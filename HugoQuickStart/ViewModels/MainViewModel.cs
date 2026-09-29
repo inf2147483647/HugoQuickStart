@@ -44,6 +44,14 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty]
     private bool _blockSeewoAssistantWindow = true;
 
+    /// <summary>
+    /// 希沃悬浮窗最终未能拦截：普通权限连续失败后已自动尝试提权（UAC → 管理员 → SYSTEM），
+    /// 若提权后窗口仍可见则置位，界面据此引导用户改用希沃「管家助手显隐」开关从源头关闭。
+    /// 仅用于提示，不持久化。
+    /// </summary>
+    [ObservableProperty]
+    private bool _seewoInterceptFailed;
+
     /// <summary>主题色模式（"System"/"Dark"/"Light"）。变更时立即应用并持久化。</summary>
     [ObservableProperty]
     private string _themeMode = "System";
@@ -94,6 +102,69 @@ public partial class MainViewModel : ObservableObject
 
     /// <summary>同一图标最近一次成功启动的时间（点击冷却判断依据）。</summary>
     private readonly Dictionary<AppItem, DateTime> _lastLaunchTimes = new();
+
+    /// <summary>自动备份周期取值范围（天）。</summary>
+    private const int MinBackupIntervalDays = 1;
+    private const int MaxBackupIntervalDays = 30;
+
+    /// <summary>自动备份数量上限的取值上限（0 表示无限制，故下限为 0）。</summary>
+    private const int MaxBackupCountLimit = 100;
+
+    /// <summary>备份总开关：开启后按周期自动备份配置。默认开启。</summary>
+    [ObservableProperty]
+    private bool _backupEnabled = true;
+
+    /// <summary>自动备份周期（天），1–30，默认 7。滑条绑定 double，写入时取整并钳制。</summary>
+    [ObservableProperty]
+    private double _backupIntervalDays = 7;
+
+    /// <summary>自动备份数量上限，0 表示无限制（手动备份不计入），默认 10。</summary>
+    [ObservableProperty]
+    private double _backupMaxCount = 10;
+
+    /// <summary>备份数量上限的展示文本：0 表示无限制。</summary>
+    public string BackupMaxCountText => BackupMaxCount <= 0 ? "无限制" : $"{BackupMaxCount:F0} 份";
+
+    partial void OnBackupEnabledChanged(bool value)
+    {
+        if (!_suppressThemeSave)
+            SaveSettingsOnly();
+        if (!_isLoadingConfig)
+            LogService.Info("设置", $"配置备份：{(value ? "已启用" : "已禁用")}");
+    }
+
+    partial void OnBackupIntervalDaysChanged(double value)
+    {
+        // 钳制到 1–30 天并取整（滑条 snap 之外的入口兜底）
+        var clamped = Math.Round(Math.Clamp(value, MinBackupIntervalDays, MaxBackupIntervalDays));
+        if (Math.Abs(clamped - value) > 1e-9)
+        {
+            BackupIntervalDays = clamped;
+            return;
+        }
+
+        if (!_suppressThemeSave)
+            SaveSettingsOnly();
+        if (!_isLoadingConfig)
+            LogService.Info("设置", $"备份周期：{value:F0} 天");
+    }
+
+    partial void OnBackupMaxCountChanged(double value)
+    {
+        // 钳制到 0–100 份并取整（0 表示不限制）
+        var clamped = Math.Round(Math.Clamp(value, 0, MaxBackupCountLimit));
+        if (Math.Abs(clamped - value) > 1e-9)
+        {
+            BackupMaxCount = clamped;
+            return;
+        }
+
+        OnPropertyChanged(nameof(BackupMaxCountText));
+        if (!_suppressThemeSave)
+            SaveSettingsOnly();
+        if (!_isLoadingConfig)
+            LogService.Info("设置", $"备份数量上限：{BackupMaxCountText}");
+    }
 
     partial void OnShowIconToolTipsChanged(bool value)
     {
@@ -283,6 +354,9 @@ public partial class MainViewModel : ObservableObject
         HideQuickEntries = config.HideQuickEntries;
         LaunchCooldownEnabled = config.LaunchCooldownEnabled;
         LaunchCooldownSeconds = config.LaunchCooldownSeconds <= 0 ? 1.0 : config.LaunchCooldownSeconds;
+        BackupEnabled = config.BackupEnabled;
+        BackupIntervalDays = Math.Clamp(config.BackupIntervalDays, MinBackupIntervalDays, MaxBackupIntervalDays);
+        BackupMaxCount = Math.Clamp(config.BackupMaxCount, 0, MaxBackupCountLimit);
         _suppressThemeSave = false;
         _isLoadingConfig = false;
 
@@ -305,12 +379,22 @@ public partial class MainViewModel : ObservableObject
         ShowIconToolTips = ShowIconToolTips,
         HideQuickEntries = HideQuickEntries,
         LaunchCooldownEnabled = LaunchCooldownEnabled,
-        LaunchCooldownSeconds = LaunchCooldownSeconds
+        LaunchCooldownSeconds = LaunchCooldownSeconds,
+        BackupEnabled = BackupEnabled,
+        BackupIntervalDays = (int)Math.Round(BackupIntervalDays),
+        BackupMaxCount = (int)Math.Round(BackupMaxCount)
     };
+
+    /// <summary>
+    /// 应用列表或快捷键可能已变化时触发（保存配置后），由宿主窗口据此重建全局热键注册。
+    /// </summary>
+    public event Action? HotkeysChanged;
 
     public void SaveConfig()
     {
         _configService.Save(BuildConfig());
+        // 列表/快捷键可能已变化 → 通知宿主重建全局快捷键注册
+        HotkeysChanged?.Invoke();
         // 配置可能被修改（新增/编辑路径），重新加载缺失的图标
         _ = RefreshIconsAsync();
     }

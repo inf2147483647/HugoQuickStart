@@ -20,13 +20,16 @@ public class AppConfigService
         // 避免覆盖安装/升级时 config.json 被安装包覆盖导致用户设置丢失。
         var dir = ConfigDirectory;
         Directory.CreateDirectory(dir);
-        _configPath = Path.Combine(dir, "config.json");
+        _configPath = ConfigFilePath;
         MigrateLegacyConfig();
     }
 
     /// <summary>用户配置目录（%APPDATA%\HugoQuickStart）。</summary>
     public static string ConfigDirectory =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "HugoQuickStart");
+
+    /// <summary>配置文件完整路径（%APPDATA%\HugoQuickStart\config.json）。</summary>
+    public static string ConfigFilePath => Path.Combine(ConfigDirectory, "config.json");
 
     /// <summary>
     /// 旧版本把 config.json 放在安装目录（exe 旁）。若用户目录尚无配置则迁移过来；
@@ -64,6 +67,31 @@ public class AppConfigService
         }
     }
 
+    /// <summary>
+    /// 尝试把 JSON 文本解析为配置对象；格式非法或结果为空时返回 null（不抛异常）。
+    /// 供备份恢复校验备份内容是否可用。
+    /// </summary>
+    public static AppConfig? TryParse(string json)
+    {
+        try
+        {
+            var config = JsonSerializer.Deserialize<AppConfig>(json, JsonOptions);
+            if (config == null)
+                return null;
+
+            config.QuickEntries ??= new List<AppItem>();
+            config.XiwoApps ??= new List<AppItem>();
+            return config;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    /// <summary>把配置原子写回配置文件路径（供备份恢复使用，无需实例）；成功返回 true。</summary>
+    public static bool TryAtomicWrite(AppConfig config) => AtomicWriteTo(ConfigFilePath, config);
+
     public AppConfig Load()
     {
         // 首次运行：目录下无配置时写入默认配置，保证后续必有稳定读写入口。
@@ -77,50 +105,56 @@ public class AppConfigService
 
         try
         {
-            var json = File.ReadAllText(_configPath);
-            var config = JsonSerializer.Deserialize<AppConfig>(json, JsonOptions);
+            var config = TryParse(File.ReadAllText(_configPath));
             if (config != null)
-            {
-                // 防御：JSON 中列表显式为 null 时补空表，避免上层 NullReferenceException
-                config.QuickEntries ??= new List<AppItem>();
-                config.XiwoApps ??= new List<AppItem>();
                 return config;
-            }
 
-            LogService.Error("配置", $"配置文件反序列化结果为空，按损坏处理：{_configPath}");
+            LogService.Error("配置", $"配置文件无法解析，按损坏处理：{_configPath}");
         }
         catch (Exception ex)
         {
             // 读取/反序列化失败视为配置损坏，走下方恢复逻辑
-            LogService.Error("配置", $"读取或解析配置失败，按损坏处理：{ex.GetType().Name}: {ex.Message}（文件：{_configPath}）");
+            LogService.Error("配置", $"读取配置失败，按损坏处理：{ex.GetType().Name}: {ex.Message}（文件：{_configPath}）");
         }
 
-        // 配置损坏：先备份原始文件再重建，绝不直接覆盖导致用户设置被静默抹掉。
+        // 配置损坏：先备份原始文件保留现场，再按"从近到远"用备份尝试恢复；
+        // 全部备份都无法恢复时才回落默认配置——绝不静默抹掉用户设置。
         BackupCorruptConfig();
+
+        var restored = ConfigBackupService.TryRestoreFromBackups();
+        if (restored != null)
+            return restored;
+
         var defaults = CreateDefaultConfig();
         AtomicWrite(defaults);
+        LogService.Warn("配置", "所有备份均无法恢复，已重建默认配置");
         return defaults;
     }
 
     public void Save(AppConfig config) => AtomicWrite(config);
 
     /// <summary>原子写入：先写临时文件再整体替换，避免写入中途（程序崩溃/断电）产生截断的损坏配置。</summary>
-    private void AtomicWrite(AppConfig config)
+    private void AtomicWrite(AppConfig config) => AtomicWriteTo(_configPath, config);
+
+    /// <summary>原子写入指定路径的配置文件；成功返回 true，失败写日志并返回 false。</summary>
+    private static bool AtomicWriteTo(string path, AppConfig config)
     {
-        var tmp = _configPath + ".tmp";
+        var tmp = path + ".tmp";
         try
         {
             var json = JsonSerializer.Serialize(config, JsonOptions);
             File.WriteAllText(tmp, json);
             // 同目录内重命名替换，NTFS 上为原子操作，目标存在与否均可。
-            File.Move(tmp, _configPath, overwrite: true);
+            File.Move(tmp, path, overwrite: true);
+            return true;
         }
         catch (Exception ex)
         {
             // 保存失败绝不能静默：用户会以为设置已生效，重启后却发现丢失
             // （常见于杀软占用 .tmp、磁盘满、漫游配置文件同步失败）。
-            LogService.Error("配置", $"配置保存失败，本次修改可能未落盘：{ex.GetType().Name}: {ex.Message}（目标：{_configPath}）");
+            LogService.Error("配置", $"配置保存失败，本次修改可能未落盘：{ex.GetType().Name}: {ex.Message}（目标：{path}）");
             try { if (File.Exists(tmp)) File.Delete(tmp); } catch { /* 忽略清理失败 */ }
+            return false;
         }
     }
 

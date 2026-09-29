@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
@@ -27,6 +28,12 @@ public partial class EditAppDialog : Window
     private DockPanel _exeIconRow = null!;
     private TextBox _exeIconTextBox = null!;
     private StackPanel _fallbackPanel = null!;
+    private TextBox _hotkeyTextBox = null!;
+    private TextBlock _hotkeyHintText = null!;
+
+    /// <summary>快捷键提示的默认文案；按下不支持的按键时临时替换为告警文案。</summary>
+    private const string HotkeyHintDefault =
+        "支持 Ctrl / Alt / Shift 与字母、数字、F1–F12 组合；单独按字母或数字会自动转为 Ctrl+Alt+字母/数字。";
 
     /// <summary>内置预设图标清单（key 对应 Assets/presets/&lt;key&gt;.png）。</summary>
     private static readonly (string Key, string Name)[] PresetIcons =
@@ -236,6 +243,45 @@ public partial class EditAppDialog : Window
         remarkPanel.Children.Add(_remarkTextBox);
         panel.Children.Add(remarkPanel);
 
+        // ---- 快捷键 ----
+        var hotkeyPanel = new StackPanel { Spacing = 4 };
+        hotkeyPanel.Children.Add(new TextBlock { Text = "快捷键（可选）", FontSize = 12 });
+
+        var hotkeyRow = new DockPanel { Margin = new Thickness(0, 4, 0, 0) };
+        var clearHotkeyButton = new Button
+        {
+            Content = "清除",
+            MinWidth = 72,
+            Margin = new Thickness(6, 0, 0, 0)
+        };
+        DockPanel.SetDock(clearHotkeyButton, Dock.Right);
+        clearHotkeyButton.Click += (_, _) =>
+        {
+            _hotkeyTextBox.Text = string.Empty;
+            ResetHotkeyHint();
+        };
+        hotkeyRow.Children.Add(clearHotkeyButton);
+
+        // 只读文本框仅作"按键捕获"显示区：KeyDown 里自行解析组合键，不接受文本输入
+        _hotkeyTextBox = new TextBox
+        {
+            IsReadOnly = true,
+            PlaceholderText = "点此按下组合键，例如 Ctrl+Alt+A"
+        };
+        _hotkeyTextBox.KeyDown += HotkeyTextBox_KeyDown;
+        hotkeyRow.Children.Add(_hotkeyTextBox);
+        hotkeyPanel.Children.Add(hotkeyRow);
+
+        _hotkeyHintText = new TextBlock
+        {
+            Text = HotkeyHintDefault,
+            FontSize = 11,
+            Opacity = 0.7,
+            TextWrapping = TextWrapping.Wrap
+        };
+        hotkeyPanel.Children.Add(_hotkeyHintText);
+        panel.Children.Add(hotkeyPanel);
+
         // ---- Buttons ----
         var buttonPanel = new StackPanel
         {
@@ -264,6 +310,7 @@ public partial class EditAppDialog : Window
         _pathTextBox.Text = AppItem.Path;
         _argsTextBox.Text = AppItem.Arguments;
         _remarkTextBox.Text = AppItem.Remark;
+        _hotkeyTextBox.Text = AppItem.Hotkey;
 
         var mode = Enum.TryParse<IconSourceMode>(AppItem.IconMode, ignoreCase: true, out var parsed)
             ? parsed : IconSourceMode.Auto;
@@ -394,6 +441,7 @@ public partial class EditAppDialog : Window
         AppItem.Path = ProcessLauncher.CleanPath(_pathTextBox.Text) ?? string.Empty;
         AppItem.Arguments = _argsTextBox.Text?.Trim() ?? string.Empty;
         AppItem.Remark = _remarkTextBox.Text?.Trim() ?? string.Empty;
+        AppItem.Hotkey = _hotkeyTextBox.Text?.Trim() ?? string.Empty;
         AppItem.FallbackPaths = CollectFallbackPaths();
 
         var mode = (IconSourceMode)Math.Max(0, _iconModeCombo.SelectedIndex);
@@ -472,6 +520,100 @@ public partial class EditAppDialog : Window
         var localPath = await PickExeFileAsync("选择用于提取图标的程序");
         if (!string.IsNullOrEmpty(localPath))
             _exeIconTextBox.Text = localPath;
+    }
+
+    // ================= 快捷键录入 =================
+
+    /// <summary>
+    /// 捕获快捷键：按下"修饰键 + 主键"的组合即写入显示框。
+    /// 仅按下修饰键时不生效（继续等待主键）；Backspace / Delete 清除已设快捷键。
+    /// </summary>
+    private void HotkeyTextBox_KeyDown(object? sender, KeyEventArgs e)
+    {
+        // 该文本框只读，此处完全接管按键，避免光标移动/选择等默认行为
+        e.Handled = true;
+
+        if (IsModifierKey(e.Key))
+            return;
+
+        if (e.Key is Key.Back or Key.Delete)
+        {
+            _hotkeyTextBox.Text = string.Empty;
+            ResetHotkeyHint();
+            return;
+        }
+
+        var keyToken = KeyToToken(e.Key);
+        if (keyToken == null)
+        {
+            ShowHotkeyHint("该按键不支持：请使用字母、数字或 F1–F12 作为主键。");
+            return;
+        }
+
+        var modifiers = e.KeyModifiers;
+        var text = GlobalHotkeyService.BuildText(
+            ctrl: modifiers.HasFlag(KeyModifiers.Control),
+            alt: modifiers.HasFlag(KeyModifiers.Alt),
+            shift: modifiers.HasFlag(KeyModifiers.Shift),
+            keyToken: keyToken);
+
+        if (string.IsNullOrEmpty(text))
+        {
+            ShowHotkeyHint("该按键不支持：请使用字母、数字或 F1–F12 作为主键。");
+            return;
+        }
+
+        _hotkeyTextBox.Text = text;
+        ResetHotkeyHint();
+    }
+
+    /// <summary>仅修饰键判定：它们自身不能构成快捷键，需与主键组合。</summary>
+    private static bool IsModifierKey(Key key) => key
+        is Key.LeftCtrl or Key.RightCtrl
+        or Key.LeftShift or Key.RightShift
+        or Key.LeftAlt or Key.RightAlt
+        or Key.LWin or Key.RWin
+        or Key.System or Key.None;
+
+    /// <summary>
+    /// Avalonia 按键 → 快捷键 token：字母（A–Z）、数字（0–9，含小键盘）、功能键（F1–F24）。
+    /// 按枚举成员名解析，不依赖枚举取值的连续性；不支持的主键返回 null。
+    /// </summary>
+    private static string? KeyToToken(Key key)
+    {
+        var name = key.ToString();
+
+        // 字母：Key.A → "A"
+        if (name.Length == 1 && name[0] >= 'A' && name[0] <= 'Z')
+            return name;
+
+        // 主键盘数字：Key.D0 → "0"
+        if (name.Length == 2 && name[0] == 'D' && name[1] >= '0' && name[1] <= '9')
+            return name[1].ToString();
+
+        // 小键盘数字：Key.NumPad0 → "0"（与主键盘数字同义）
+        if (name.StartsWith("NumPad", StringComparison.Ordinal) &&
+            int.TryParse(name.AsSpan(6), out var pad) && pad is >= 0 and <= 9)
+            return pad.ToString();
+
+        // 功能键：Key.F1 → "F1"
+        if (name.Length is >= 2 and <= 3 && name[0] == 'F' &&
+            int.TryParse(name.AsSpan(1), out var fn) && fn is >= 1 and <= 24)
+            return "F" + fn;
+
+        return null;
+    }
+
+    private void ResetHotkeyHint()
+    {
+        _hotkeyHintText.Text = HotkeyHintDefault;
+        _hotkeyHintText.Opacity = 0.7;
+    }
+
+    private void ShowHotkeyHint(string message)
+    {
+        _hotkeyHintText.Text = message;
+        _hotkeyHintText.Opacity = 1;
     }
 
     private System.Threading.Tasks.Task ShowMessage(string title, string message)

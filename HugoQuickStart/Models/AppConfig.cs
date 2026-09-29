@@ -29,6 +29,15 @@ public class AppConfig
 
     /// <summary>点击冷却时长（秒），0.1–5.0，默认 1.0。持久化到配置文件。</summary>
     public double LaunchCooldownSeconds { get; set; } = 1.0;
+
+    /// <summary>备份总开关：开启后按周期自动备份配置。默认开启。持久化到配置文件。</summary>
+    public bool BackupEnabled { get; set; } = true;
+
+    /// <summary>自动备份周期（天），1–30。默认 7。持久化到配置文件。</summary>
+    public int BackupIntervalDays { get; set; } = 7;
+
+    /// <summary>自动备份数量上限，0 表示无限制（手动备份不计入）。默认 10。持久化到配置文件。</summary>
+    public int BackupMaxCount { get; set; } = 10;
     public double WindowWidth { get; set; } = 380;
     public double WindowHeight { get; set; } = 500;
     public int MarginRight { get; set; } = 20;

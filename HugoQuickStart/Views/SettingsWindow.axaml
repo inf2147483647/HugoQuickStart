@@ -109,6 +109,18 @@
                                        Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
                         </Grid>
                     </ListBoxItem>
+                    <ListBoxItem Classes="navitem" x:Name="NavBackup">
+                        <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
+                            <TextBlock Text="&#xE74E;"
+                                       FontFamily="Segoe MDL2 Assets, Segoe UI Symbol"
+                                       FontSize="15"
+                                       VerticalAlignment="Center"
+                                       Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+                            <TextBlock Grid.Column="1" Text="备份设置"
+                                       VerticalAlignment="Center"
+                                       Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+                        </Grid>
+                    </ListBoxItem>
                     <ListBoxItem Classes="navitem" x:Name="NavAbout">
                         <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
                             <TextBlock Text="&#xE946;"
@@ -437,35 +449,36 @@
                         </Grid>
                     </Border>
 
-                    <!-- 拦截日志 -->
-                    <Border Padding="16,12"
+                    <!-- 拦截失效提示：普通权限失败后会先自动提权重试，仍失败才提示改用官方开关 -->
+                    <Border IsVisible="{Binding SeewoInterceptFailed}"
                             Margin="0,8,0,0"
+                            Padding="16,12"
                             CornerRadius="8"
                             Background="{DynamicResource SubtleFillColorTertiaryBrush}">
-                        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="14">
+                        <Grid ColumnDefinitions="Auto,*" ColumnSpacing="14">
                             <Border Width="36" Height="36" CornerRadius="8"
                                     Background="{DynamicResource SubtleFillColorSecondaryBrush}">
-                                <TextBlock Text="&#xE9D9;"
+                                <TextBlock Text="&#xE7BA;"
                                            FontFamily="Segoe MDL2 Assets, Segoe UI Symbol"
                                            FontSize="16"
                                            HorizontalAlignment="Center"
                                            VerticalAlignment="Center"
                                            Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
                             </Border>
-                            <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
-                                <TextBlock Text="拦截日志"
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="6">
+                                <TextBlock Text="拦截未生效：提权后仍未能关闭"
                                            FontSize="14"
                                            FontWeight="SemiBold"
                                            Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
-                                <TextBlock Text="被隐藏的窗口会记录在程序目录下的 seewo-blocker.log，便于排查误拦截。"
+                                <TextBlock Text="希沃管家（SeewoServiceAssistant.exe）以 SYSTEM 权限运行。普通权限连续隐藏失败 3 次后，本程序已自动请求提权（会弹出 UAC 确认）并以 SYSTEM 身份重试关闭。"
+                                           FontSize="12"
+                                           TextWrapping="Wrap"
+                                           Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+                                <TextBlock Text="若仍未关闭（例如取消了 UAC 确认），建议改用希沃官方开关：希沃管家「智慧管控 → 自定义终端桌面 → 管家助手显隐」选择关闭，右下角桌面助手即不再显示，且不影响白板、展台等其它功能。"
                                            FontSize="12"
                                            TextWrapping="Wrap"
                                            Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
                             </StackPanel>
-                            <Button Grid.Column="2"
-                                    Content="打开目录"
-                                    VerticalAlignment="Center"
-                                    Click="OpenAppDirectory_OnClick"/>
                         </Grid>
                     </Border>
                 </StackPanel>
@@ -515,6 +528,156 @@
                     </ScrollViewer>
                 </Border>
             </Grid>
+
+            <!-- ===== 页面：备份设置 ===== -->
+            <ScrollViewer x:Name="PageBackup"
+                          IsVisible="False"
+                          VerticalScrollBarVisibility="Auto">
+                <StackPanel x:Name="PageBackupPanel"
+                            Margin="28,26,28,20" Spacing="8">
+                    <TextBlock Text="备份设置"
+                               FontSize="22"
+                               FontWeight="SemiBold"
+                               Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+                    <TextBlock Text="把配置文件（设置项与应用图标列表）打包为 zip 备份，保存在用户配置目录下的 Backups 文件夹；配置损坏时会自动按从近到远尝试恢复。"
+                               FontSize="12"
+                               Margin="0,0,0,12"
+                               TextWrapping="Wrap"
+                               Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+
+                    <!-- 备份总开关 -->
+                    <Border Padding="16,12"
+                            CornerRadius="8"
+                            Background="{DynamicResource SubtleFillColorTertiaryBrush}">
+                        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="14">
+                            <Border Width="36" Height="36" CornerRadius="8"
+                                    Background="{DynamicResource SubtleFillColorSecondaryBrush}">
+                                <TextBlock Text="&#xE74E;"
+                                           FontFamily="Segoe MDL2 Assets, Segoe UI Symbol"
+                                           FontSize="16"
+                                           HorizontalAlignment="Center"
+                                           VerticalAlignment="Center"
+                                           Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+                            </Border>
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                                <TextBlock Text="自动备份"
+                                           FontSize="14"
+                                           FontWeight="SemiBold"
+                                           Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+                                <TextBlock Text="开启后按下方周期自动备份；到期后的第一次启动执行备份。"
+                                           FontSize="12"
+                                           TextWrapping="Wrap"
+                                           Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+                            </StackPanel>
+                            <ToggleSwitch Grid.Column="2"
+                                          IsChecked="{Binding BackupEnabled}"
+                                          VerticalAlignment="Center"/>
+                        </Grid>
+                    </Border>
+
+                    <!-- 备份周期 -->
+                    <Border Padding="16,12"
+                            CornerRadius="8"
+                            Background="{DynamicResource SubtleFillColorTertiaryBrush}">
+                        <StackPanel Spacing="10">
+                            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="14">
+                                <Border Width="36" Height="36" CornerRadius="8"
+                                        Background="{DynamicResource SubtleFillColorSecondaryBrush}">
+                                    <TextBlock Text="&#xE823;"
+                                               FontFamily="Segoe MDL2 Assets, Segoe UI Symbol"
+                                               FontSize="16"
+                                               HorizontalAlignment="Center"
+                                               VerticalAlignment="Center"
+                                               Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+                                </Border>
+                                <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                                    <TextBlock Text="备份周期"
+                                               FontSize="14"
+                                               FontWeight="SemiBold"
+                                               Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+                                    <TextBlock Text="自动备份的间隔天数（1 – 30 天）。"
+                                               FontSize="12"
+                                               TextWrapping="Wrap"
+                                               Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+                                </StackPanel>
+                                <TextBlock Grid.Column="2"
+                                           VerticalAlignment="Center"
+                                           MinWidth="44"
+                                           TextAlignment="Right"
+                                           FontSize="14"
+                                           FontWeight="SemiBold"
+                                           Text="{Binding BackupIntervalDays, StringFormat={}{0:F0} 天}"
+                                           Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+                            </Grid>
+                            <Slider Minimum="1"
+                                    Maximum="30"
+                                    TickFrequency="1"
+                                    IsSnapToTickEnabled="True"
+                                    Value="{Binding BackupIntervalDays, Mode=TwoWay}"
+                                    HorizontalAlignment="Stretch"/>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- 备份数量上限 -->
+                    <Border Padding="16,12"
+                            CornerRadius="8"
+                            Background="{DynamicResource SubtleFillColorTertiaryBrush}">
+                        <StackPanel Spacing="10">
+                            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="14">
+                                <Border Width="36" Height="36" CornerRadius="8"
+                                        Background="{DynamicResource SubtleFillColorSecondaryBrush}">
+                                    <TextBlock Text="&#xE8B7;"
+                                               FontFamily="Segoe MDL2 Assets, Segoe UI Symbol"
+                                               FontSize="16"
+                                               HorizontalAlignment="Center"
+                                               VerticalAlignment="Center"
+                                               Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+                                </Border>
+                                <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                                    <TextBlock Text="备份数量上限"
+                                               FontSize="14"
+                                               FontWeight="SemiBold"
+                                               Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+                                    <TextBlock Text="保留的自动备份份数，超出后自动清理最旧的；0 表示无限制。手动备份不占用上限。"
+                                               FontSize="12"
+                                               TextWrapping="Wrap"
+                                               Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+                                </StackPanel>
+                                <TextBlock Grid.Column="2"
+                                           VerticalAlignment="Center"
+                                           MinWidth="52"
+                                           TextAlignment="Right"
+                                           FontSize="14"
+                                           FontWeight="SemiBold"
+                                           Text="{Binding BackupMaxCountText}"
+                                           Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+                            </Grid>
+                            <Slider Minimum="0"
+                                    Maximum="100"
+                                    TickFrequency="1"
+                                    IsSnapToTickEnabled="True"
+                                    Value="{Binding BackupMaxCount, Mode=TwoWay}"
+                                    HorizontalAlignment="Stretch"/>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- 手动备份 / 打开备份目录 -->
+                    <Border Padding="16,12"
+                            CornerRadius="8"
+                            Background="{DynamicResource SubtleFillColorTertiaryBrush}">
+                        <StackPanel Spacing="10">
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <Button Content="手动备份" Click="BackupNow_OnClick"/>
+                                <Button Content="打开备份目录" Click="OpenBackupDirectory_OnClick"/>
+                            </StackPanel>
+                            <TextBlock x:Name="BackupStatusText"
+                                       FontSize="12"
+                                       TextWrapping="Wrap"
+                                       Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </ScrollViewer>
 
             <!-- ===== 页面：关于 ===== -->
             <ScrollViewer x:Name="PageAbout"

@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
@@ -45,6 +44,25 @@ public sealed class SeewoAssistantWindowBlocker : IDisposable
     private bool _enabled;
     private bool _disposed;
 
+    /// <summary>ERROR_ACCESS_DENIED：跨进程操作高完整性级别窗口时被 UIPI 拒绝（权限不足）。</summary>
+    private const int ErrorAccessDenied = 5;
+
+    /// <summary>普通权限隐藏连续失败达到该次数后，转为提权（SYSTEM）方式关闭。</summary>
+    private const int MaxNormalHideAttempts = 3;
+
+    /// <summary>
+    /// 各窗口的隐藏尝试记录（失败次数、是否已转入提权处理）。
+    /// 既支撑"连续失败 3 次再提权"，也避免每个 Tick 都重复尝试导致日志刷屏。
+    /// </summary>
+    private readonly Dictionary<IntPtr, (int Count, bool Escalated)> _hideAttempts = new();
+
+    /// <summary>
+    /// 普通权限隐藏连续失败达到 <see cref="MaxNormalHideAttempts"/> 次时触发一次，参数为目标窗口句柄。
+    /// 宿主据此走提权链路（管理员 → SYSTEM）关闭该窗口。
+    /// 可能在钩子线程/扫描线程上触发，订阅方需自行切回 UI 线程。
+    /// </summary>
+    public event Action<IntPtr>? EscalationRequired;
+
     private Timer? _scanTimer;
     private Thread? _hookThread;
     private volatile uint _hookThreadOsId;
@@ -54,9 +72,6 @@ public sealed class SeewoAssistantWindowBlocker : IDisposable
 
     // 事件钩子回调的委托必须保持引用，防止被 GC 回收
     private readonly WinEventDelegate _winEventCallback;
-
-    private readonly string _logPath =
-        Path.Combine(AppContext.BaseDirectory, "seewo-blocker.log");
 
     public SeewoAssistantWindowBlocker(bool enabled = true)
     {
@@ -80,6 +95,8 @@ public sealed class SeewoAssistantWindowBlocker : IDisposable
 
                 if (_enabled)
                 {
+                    // 重新启用时清空尝试记录，允许从头（含提权流程）重新尝试
+                    _hideAttempts.Clear();
                     StartHookThreadLocked();
                     StartScanTimerLocked();
                 }
@@ -291,11 +308,75 @@ public sealed class SeewoAssistantWindowBlocker : IDisposable
             return;
         }
 
-        if (IsWindowVisible(hwnd))
+        if (!IsWindowVisible(hwnd))
+            return;
+
+        // 读取该窗口已有的失败计数；句柄可能已销毁并被复用，故先确认仍是同一个有效窗口。
+        var attempts = 0;
+        if (_hideAttempts.TryGetValue(hwnd, out var state))
         {
-            ShowWindow(hwnd, SW_HIDE);
-            LogHidden(hwnd);
+            if (!IsWindow(hwnd))
+            {
+                _hideAttempts.Remove(hwnd);
+            }
+            else if (state.Escalated || state.Count >= MaxNormalHideAttempts)
+            {
+                return;   // 已转入提权处理或已达尝试上限：不再重复尝试
+            }
+            else
+            {
+                attempts = state.Count;
+            }
         }
+
+        ShowWindow(hwnd, SW_HIDE);
+
+        // 关键：ShowWindow 的返回值是"调用前是否可见"，并不代表本次隐藏已经成功。
+        // 目标进程完整性级别更高时（希沃管家以 SYSTEM 身份运行），
+        // Windows UIPI 会拒绝本次操作（GetLastError=ERROR_ACCESS_DENIED），窗口依旧可见。
+        // 因此必须复查真实可见性，否则会写入大量"虚假成功"日志而掩盖问题。
+        if (!IsWindowVisible(hwnd))
+        {
+            _hideAttempts.Remove(hwnd);
+            LogHidden(hwnd);
+            return;
+        }
+
+        var error = Marshal.GetLastWin32Error();
+        var accessDenied = error == ErrorAccessDenied;
+        attempts++;
+
+        if (attempts < MaxNormalHideAttempts)
+        {
+            // 未达上限：下个 Tick 再试。仅首次失败写日志，避免每秒刷屏。
+            _hideAttempts[hwnd] = (attempts, false);
+            if (attempts == 1)
+            {
+                LogService.Warn("弹窗拦截", accessDenied
+                    ? $"隐藏窗口失败（权限不足）：hwnd=0x{hwnd.ToInt64():X} class=\"{ClassNameOf(hwnd)}\"。"
+                      + $"该进程以更高权限运行，受 Windows UIPI 限制；将在连续失败 {MaxNormalHideAttempts} 次后转为提权（SYSTEM）方式关闭。"
+                    : $"隐藏窗口失败：hwnd=0x{hwnd.ToInt64():X} class=\"{ClassNameOf(hwnd)}\"（错误码 {error}），"
+                      + $"将在连续失败 {MaxNormalHideAttempts} 次后转为提权方式关闭。");
+            }
+            return;
+        }
+
+        // 连续失败达上限 → 交由宿主提权（管理员 → SYSTEM）关闭，本窗口不再重试
+        _hideAttempts[hwnd] = (attempts, true);
+        LogService.Warn("弹窗拦截",
+            $"普通权限已连续失败 {attempts} 次（hwnd=0x{hwnd.ToInt64():X} class=\"{ClassNameOf(hwnd)}\"，错误码 {error}），"
+            + "转为提权（SYSTEM）方式关闭。");
+
+        try { EscalationRequired?.Invoke(hwnd); }
+        catch { /* 订阅方异常不应影响拦截器主流程 */ }
+    }
+
+    /// <summary>读取窗口类名（仅用于日志）。</summary>
+    private static string ClassNameOf(IntPtr hwnd)
+    {
+        var cls = new StringBuilder(256);
+        GetClassName(hwnd, cls, cls.Capacity);
+        return cls.ToString();
     }
 
     private static bool IsTargetPid(uint pid)
@@ -353,10 +434,11 @@ public sealed class SeewoAssistantWindowBlocker : IDisposable
             GetClassName(hwnd, cls, cls.Capacity);
             GetWindowRect(hwnd, out RECT rect);
 
-            File.AppendAllText(_logPath,
-                $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] 已隐藏窗口 hwnd=0x{hwnd.ToInt64():X} " +
-                $"class=\"{cls}\" title=\"{title}\" rect=({rect.Left},{rect.Top})-({rect.Right},{rect.Bottom})" +
-                Environment.NewLine);
+            // 合入程序日志（不再单独写 seewo-blocker.log）：
+            // LogService 内部有锁且会 Post 到 UI 线程刷新列表，可从钩子线程/扫描线程直接调用。
+            LogService.Info("弹窗拦截",
+                $"已隐藏窗口 hwnd=0x{hwnd.ToInt64():X} class=\"{cls}\" title=\"{title}\" " +
+                $"rect=({rect.Left},{rect.Top})-({rect.Right},{rect.Bottom})");
         }
         catch
         {
@@ -423,9 +505,14 @@ public sealed class SeewoAssistantWindowBlocker : IDisposable
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
 
-    [DllImport("user32.dll")]
+    [DllImport("user32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool ShowWindow(IntPtr hWnd, uint nCmdShow);
+
+    /// <summary>判断句柄是否仍指向一个有效窗口（用于清理失败记录，防止句柄复用误判）。</summary>
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool IsWindow(IntPtr hWnd);
 
     [DllImport("user32.dll")]
     private static extern IntPtr GetAncestor(IntPtr hWnd, uint gaFlags);

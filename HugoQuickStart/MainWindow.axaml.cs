@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Threading;
@@ -22,8 +24,12 @@ public partial class MainWindow : Window
 {
     private MainViewModel _viewModel = null!;
     private DispatcherTimer? _bottomTimer;
-    /// <summary>置底维护 Tick 计数，用于把位置校准降频到约 2s 一次（见 AnchorCalibrationTicks）。</summary>
-    private int _anchorTickCounter;
+    /// <summary>最近一次"机会式置底"的时间戳（Environment.TickCount64），用于限制抢占频率。</summary>
+    private long _lastOpportunisticPushTick;
+    /// <summary>置底竞争中已让出：不再由兜底定时器抢占 Z 序，只保留事件驱动的必要修正。</summary>
+    private bool _bottomContentionYielded;
+    /// <summary>窗口期内的机会式置底时间戳，用于判定是否存在置底竞争。</summary>
+    private readonly Queue<long> _opportunisticPushTicks = new();
     private int _dialogCount;
     private bool _allowClose;
     private bool _isCloseConfirmShown;
@@ -42,6 +48,8 @@ public partial class MainWindow : Window
     private SeewoAssistantWindowBlocker? _seewoBlocker;
     private TrayIcon? _trayIcon;
     private FloatBallWindow? _floatBallWindow;
+    /// <summary>快捷应用全局快捷键（注册/注销与 WM_HOTKEY 分发）。</summary>
+    private readonly GlobalHotkeyService _hotkeyService = new();
 
     // ---- 自定义图标悬浮提示（静止 1s 弹出，0.25s 淡入 / 0.25s 淡出） ----
     private DispatcherTimer? _tipIdleTimer;
@@ -54,14 +62,21 @@ public partial class MainWindow : Window
     private const double TipStillThreshold = 4.0;
 
     /// <summary>
-    /// 置底维护定时器间隔（毫秒）。对齐参考项目 AdvancedTimeIsland 的 Every1Ms 档：
-    /// 该 Tick 只做"探测 + 按需置底"（无变化不调用 SetWindowPos），稳态下零副作用，
-    /// 因此即使 1ms 也不会周期性重排 Z 序造成闪烁；被外部抬层后 ≤1ms 即可回落。
+    /// 置底维护定时器间隔（毫秒）。仅作"事件驱动全部失效"时的低频兜底探测。
+    /// 不能用高频轮询（曾用 1ms）：多个主动置底的窗口同时存在时，每个窗口都会探测到
+    /// "自己下方还有别的普通窗口"而反复调用 SetWindowPos(HWND_BOTTOM)，形成 Z 序争夺战，
+    /// 表现为高频闪烁（Rainmeter 官方文档明确记载同层窗口互相主动抢占会 flicker）。
     /// </summary>
-    private const int BottomMaintenanceIntervalMs = 1;
+    private const int BottomMaintenanceIntervalMs = 1000;
 
-    /// <summary>位置校准的降频周期（Tick 次数）：1ms Tick × 2000 ≈ 2s，仅兜底工作区/DPI 变化。</summary>
-    private const int AnchorCalibrationTicks = 2000;
+    /// <summary>两次"机会式置底"之间的最小间隔（毫秒），限制争夺战频率。</summary>
+    private const int OpportunisticBottomMinIntervalMs = 1500;
+
+    /// <summary>置底竞争判定：窗口期内机会式置底达到该次数，即认定存在多个置底窗口在互相抢占。</summary>
+    private const int BottomContentionPushThreshold = 4;
+
+    /// <summary>置底竞争的统计窗口。</summary>
+    private static readonly TimeSpan BottomContentionWindow = TimeSpan.FromSeconds(10);
 
     public MainWindow()
     {
@@ -85,6 +100,8 @@ public partial class MainWindow : Window
             _bottomTimer?.Stop();
             UnregisterForegroundHook();
             DetachWndProcHook();
+            _viewModel.HotkeysChanged -= RebindHotkeys;
+            _hotkeyService.Dispose();
             _seewoBlocker?.Dispose();
             _seewoBlocker = null;
             _trayIcon?.Dispose();
@@ -100,6 +117,9 @@ public partial class MainWindow : Window
         {
             if (e.PropertyName == nameof(MainViewModel.BlockSeewoAssistantWindow))
             {
+                // 重新启用时清除上一次的"拦截失效"提示，允许重新尝试（拦截器同时会清空尝试记录）
+                _viewModel.SeewoInterceptFailed = false;
+
                 if (_seewoBlocker != null)
                     _seewoBlocker.Enabled = _viewModel.BlockSeewoAssistantWindow;
             }
@@ -250,7 +270,66 @@ public partial class MainWindow : Window
 
         StartBottomMostMaintenance();
         StartSeewoBlocker();
+        InitializeHotkeys();
+        RunStartupBackupIfEnabled();
         LogService.Info("初始化", "主界面已加载并显示");
+    }
+
+    /// <summary>
+    /// 启动时按需自动备份配置（只备份 config.json：设置项与图标列表）。
+    /// 仅当备份总开关开启时执行；距上次自动备份已满设定周期（或从未备份过）才创建，
+    /// 随后按数量上限清理最旧的自动备份（0 表示不限制）。手动备份不在此路径。
+    /// </summary>
+    private void RunStartupBackupIfEnabled()
+    {
+        if (!_viewModel.BackupEnabled)
+            return;
+
+        ConfigBackupService.RunStartupBackup(
+            (int)Math.Round(_viewModel.BackupIntervalDays),
+            (int)Math.Round(_viewModel.BackupMaxCount));
+    }
+
+    /// <summary>
+    /// 初始化快捷应用全局快捷键：绑定窗口句柄与触发回调、按当前配置注册，
+    /// 并订阅配置保存事件以便列表/快捷键变更后自动重建注册。
+    /// </summary>
+    private void InitializeHotkeys()
+    {
+        if (!OperatingSystem.IsWindows())
+            return;
+
+        var hwnd = TryGetPlatformHandle()?.Handle ?? IntPtr.Zero;
+        if (hwnd == IntPtr.Zero)
+        {
+            LogService.Warn("快捷键", "未取得窗口句柄，全局快捷键未注册");
+            return;
+        }
+
+        // 触发统一走图标点击的启动路径（含冷却、备选路径、协议提示、状态条反馈）
+        _hotkeyService.Attach(hwnd, app => _viewModel.LaunchAppCommand.Execute(app));
+        _viewModel.HotkeysChanged += RebindHotkeys;
+        RebindHotkeys();
+    }
+
+    /// <summary>
+    /// 重建全部全局热键注册。注册失败（组合被占用、权限不足等）时给出提示，
+    /// 但不影响其余热键（例如 Ctrl+F1 常被驱动或其它常驻软件占用）。
+    /// </summary>
+    private void RebindHotkeys()
+    {
+        if (!OperatingSystem.IsWindows())
+            return;
+
+        var failures = _hotkeyService.Rebind(_viewModel.QuickEntries.Concat(_viewModel.XiwoApps));
+
+        if (failures.Count > 0)
+        {
+            LogService.Warn("快捷键", $"{failures.Count} 项快捷键未生效：{string.Join("；", failures)}");
+            _viewModel.ShowStatus(failures.Count == 1
+                ? failures[0]
+                : $"{failures[0]}（另有 {failures.Count - 1} 项快捷键未生效，详见日志）");
+        }
     }
 
     /// <summary>
@@ -301,10 +380,91 @@ public partial class MainWindow : Window
             return;
 
         if (_seewoBlocker == null)
+        {
             _seewoBlocker = new SeewoAssistantWindowBlocker(_viewModel.BlockSeewoAssistantWindow);
+            // 普通权限连续失败达阈值后，拦截器上报目标句柄 → 走提权链路（UAC → 管理员 → SYSTEM）关闭。
+            _seewoBlocker.EscalationRequired += hwnd => _ = EscalateHideAsync(hwnd);
+        }
         else
             _seewoBlocker.Enabled = _viewModel.BlockSeewoAssistantWindow;
     }
+
+    /// <summary>
+    /// 提权关闭希沃管家悬浮窗（普通权限连续失败后触发）。
+    /// 用 ShellExecute 的 runas 启动本程序的管理员实例（弹一次 UAC 确认），
+    /// 该实例再复制 SYSTEM 令牌、以 SYSTEM 身份启动工作进程完成隐藏。
+    /// 因 ShellExecute 拿不到子进程退出码，最终以"窗口是否真的不可见"为准确认结果。
+    /// </summary>
+    private async Task EscalateHideAsync(IntPtr hwnd)
+    {
+        try
+        {
+            var exePath = Environment.ProcessPath;
+            if (string.IsNullOrEmpty(exePath))
+            {
+                LogService.Warn("提权拦截", "无法获取当前程序路径，提权取消");
+                return;
+            }
+
+            LogService.Warn("提权拦截",
+                $"普通权限隐藏失败，正在请求提权（将弹出 UAC 确认）关闭窗口 hwnd=0x{hwnd.ToInt64():X}");
+
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = exePath,
+                Arguments = $"--hide-window {hwnd.ToInt64()} --elevate",
+                UseShellExecute = true,   // runas 需要 ShellExecute
+                Verb = "runas"            // 触发 UAC 提权
+            };
+
+            try
+            {
+                Process.Start(startInfo);
+            }
+            catch (Exception ex)
+            {
+                // 用户在 UAC 对话框选择"否"时会抛 Win32Exception(1223)
+                LogService.Warn("提权拦截", $"提权请求未完成：{ex.GetType().Name}: {ex.Message}");
+                SetSeewoInterceptFailed(true);
+                return;
+            }
+
+            var hidden = await WaitUntilWindowHiddenAsync(hwnd, TimeSpan.FromSeconds(20));
+            if (hidden)
+            {
+                LogService.Info("提权拦截", $"已通过提权（SYSTEM）关闭希沃悬浮窗 hwnd=0x{hwnd.ToInt64():X}");
+                SetSeewoInterceptFailed(false);
+            }
+            else
+            {
+                LogService.Error("提权拦截",
+                    $"提权后窗口仍可见（hwnd=0x{hwnd.ToInt64():X}）；可直接改用希沃“管家助手显隐”开关从源头关闭。");
+                SetSeewoInterceptFailed(true);
+            }
+        }
+        catch (Exception ex)
+        {
+            LogService.Error("提权拦截", $"提权关闭窗口异常：{ex.GetType().Name}: {ex.Message}");
+        }
+    }
+
+    /// <summary>轮询等待目标窗口变为不可见（提权工作进程完成后生效）。</summary>
+    private static async Task<bool> WaitUntilWindowHiddenAsync(IntPtr hwnd, TimeSpan timeout)
+    {
+        var deadline = DateTime.UtcNow + timeout;
+        while (DateTime.UtcNow < deadline)
+        {
+            if (!IsWindowVisible(hwnd))
+                return true;
+            await Task.Delay(250);
+        }
+
+        return !IsWindowVisible(hwnd);
+    }
+
+    /// <summary>在 UI 线程上更新"拦截失效"提示（提权后仍未能关闭时提示改用希沃官方开关）。</summary>
+    private void SetSeewoInterceptFailed(bool failed) =>
+        Dispatcher.UIThread.Post(() => _viewModel.SeewoInterceptFailed = failed);
 
     /// <summary>
     /// SizeToContent 下内容高度变化（如编辑模式切换、增删应用）会引起窗口尺寸变化，
@@ -354,7 +514,8 @@ public partial class MainWindow : Window
     ///  2) WndProc 子类化（<see cref="AttachWndProcHook"/>）：本窗 Z 序被改时即时压回，
     ///     可捕获不产生前台/焦点事件的重排；
     ///  3) EVENT_SYSTEM_FOREGROUND 钩子（<see cref="RegisterForegroundHook"/>）：任意窗口切前台时即时压回；
-    ///  4) 高频维护定时器：周期兜底探测（参考其 Every1Ms 档），无变化时不触碰 Z 序。
+    ///  4) 低频兜底定时器：仅在前三类事件都没覆盖到时兜底（<see cref="SendToBottomOpportunistically"/>
+    ///     带频率限制与"置底竞争"让出，避免与其它置底窗口互相抢占 Z 序而闪烁）。
     /// 不信任"已置底"布尔标志——它会在无焦点事件的外部抬层后永久失真，导致窗口赖在前面不回落。
     /// </summary>
     private void StartBottomMostMaintenance()
@@ -376,8 +537,6 @@ public partial class MainWindow : Window
 
         _bottomTimer = new DispatcherTimer(DispatcherPriority.Background)
         {
-            // 对齐 AdvancedTimeIsland Every1Ms 档：探测式（无变化不调用 SetWindowPos），
-            // 稳态下零副作用，被抬层后 ≤1ms 即回落。
             Interval = TimeSpan.FromMilliseconds(BottomMaintenanceIntervalMs)
         };
         _bottomTimer.Tick += (_, _) =>
@@ -395,29 +554,28 @@ public partial class MainWindow : Window
             // 需持续补写（值相同不写，不触发 DWM 重评估，故高频 Tick 下无额外开销）。
             ApplyNoActivateStyle();
 
-            // 真实探测：只有确实被抬起来才重设 Z 序（与参考实现一致，高频路径只碰 Z 序/样式）
+            // 真实探测：只有确实被抬起来才重设 Z 序。这里走"机会式置底"——
+            // 带最小间隔与置底竞争让出，避免与其它置底窗口互相反复抢占造成闪烁。
             if (IsRaisedAboveForeignWindow())
-                SendToBottom();
+                SendToBottomOpportunistically();
 
-            // 位置校准降频：常态由 LayoutUpdated 在窗口尺寸变化时立即重锚，
-            // 这里只兜底"工作区/DPI 变化"（任务栏增删、分辨率切换）——1ms Tick 下每
-            // AnchorCalibrationTicks 次校准一次（≈2s），避免高频查询显示器布局。
-            if (++_anchorTickCounter >= AnchorCalibrationTicks)
-            {
-                _anchorTickCounter = 0;
-                PositionWindowBottomRight();
-            }
+            // 位置校准：常态由 LayoutUpdated 在窗口尺寸变化时立即重锚，
+            // 这里兜底"工作区/DPI 变化"（任务栏增删、分辨率切换）；幂等，未变化不写。
+            PositionWindowBottomRight();
         };
         _bottomTimer.Start();
     }
 
     /// <summary>
     /// 沿 Z 序向下扫描本窗口之下的窗口（GetWindow GW_HWNDNEXT）。
-    /// 若存在"可见、非本进程、且非置顶（WS_EX_TOPMOST）"的窗口，说明本窗被抬到了它们之上，
+    /// 若存在"可见、非本进程、非置顶（WS_EX_TOPMOST）"的窗口，说明本窗被抬到了它们之上，
     /// 即已不在最底层。置顶窗口永远在普通层之上、不会出现在本窗之下，故跳过即可。
     /// 已在最底层时本窗之下没有普通窗口，返回 false，定时器因此不会调用 SetWindowPos（无闪烁）。
     /// 注意：正确置底时本窗之下仍有桌面 Shell 窗口（Progman/WorkerW，可见且非置顶），
     /// 它们是 Z 序链最底部的特殊存在，必须按类名排除，否则永远判定"被抬起"→ 周期性重设 → 闪烁。
+    /// 同理必须排除"不可激活窗口（WS_EX_NOACTIVATE）"——它们是与本窗同类的桌面面板/覆盖层
+    /// （其它置底悬浮窗即属此类），本窗位于其上方无害；若把它们当作"被抬起"的依据，
+    /// 多个置底窗口会互相判定、反复压底，形成 Z 序争夺战而持续闪烁。
     /// </summary>
     private bool IsRaisedAboveForeignWindow()
     {
@@ -436,8 +594,9 @@ public partial class MainWindow : Window
                     if (pid != _ownPid && !IsDesktopShellWindow(below))
                     {
                         var exStyle = (int)(long)GetWindowLongPtr(below, GWL_EXSTYLE);
-                        if ((exStyle & WS_EX_TOPMOST) == 0)
-                            return true;    // 本窗之下还有其它进程的普通窗口 → 本窗不在底层
+                        // 普通可交互窗口位于本窗之下 → 本窗确实被抬起来了
+                        if ((exStyle & WS_EX_TOPMOST) == 0 && (exStyle & WS_EX_NOACTIVATE) == 0)
+                            return true;
                     }
                 }
                 below = GetWindow(below, GW_HWNDNEXT);
@@ -448,6 +607,41 @@ public partial class MainWindow : Window
         {
             // 探测失败按"需要重新置底"处理，宁可多压一次也不让窗口赖在前面
             return true;
+        }
+    }
+
+    /// <summary>
+    /// 机会式置底：仅由低频兜底定时器调用，带最小间隔与"置底竞争"让出机制。
+    /// 多个都主动置底的窗口同时存在时，每个窗口都可能探测到"自己下方还有别的普通窗口"，
+    /// 若各自无条件反复压底就会形成 Z 序争夺战（Rainmeter 官方文档明确记载同层窗口
+    /// 互相主动抢占会 flicker）。因此这里：①限制抢占频率；②短期内反复抢占即认定存在
+    /// 竞争，永久让出周期抢占，只保留事件驱动路径（前台切换 / 本窗 Z 序变化 / 失焦）
+    /// 的必要修正——那些路径由真实转换触发，不会自激。
+    /// </summary>
+    private void SendToBottomOpportunistically()
+    {
+        if (_bottomContentionYielded)
+            return;
+
+        var now = Environment.TickCount64;
+        if (now - _lastOpportunisticPushTick < OpportunisticBottomMinIntervalMs)
+            return;
+
+        _lastOpportunisticPushTick = now;
+        SendToBottom();
+
+        // 统计窗口期内的抢占次数，超出阈值即认定正在与其它置底窗口互相抢占
+        _opportunisticPushTicks.Enqueue(now);
+        var windowMs = (long)BottomContentionWindow.TotalMilliseconds;
+        while (_opportunisticPushTicks.Count > 0 && now - _opportunisticPushTicks.Peek() > windowMs)
+            _opportunisticPushTicks.Dequeue();
+
+        if (_opportunisticPushTicks.Count >= BottomContentionPushThreshold)
+        {
+            _bottomContentionYielded = true;
+            _opportunisticPushTicks.Clear();
+            LogService.Warn("置底",
+                "检测到多个窗口同时在抢占桌面底层（置底竞争），已停止周期性置底，改由事件驱动维护以避免闪烁");
         }
     }
 
@@ -576,6 +770,9 @@ public partial class MainWindow : Window
 
     private const uint WM_WINDOWPOSCHANGED = 0x0047;
 
+    /// <summary>已注册的全局热键被按下（wParam = 热键 ID）。</summary>
+    private const uint WM_HOTKEY = 0x0312;
+
     private const uint EVENT_SYSTEM_FOREGROUND = 0x0003;
     private const uint WINEVENT_OUTOFCONTEXT = 0x0000;
 
@@ -697,6 +894,13 @@ public partial class MainWindow : Window
                             SendToBottom();
                     }, DispatcherPriority.Background);
                 }
+            }
+            else if (msg == WM_HOTKEY)
+            {
+                // 有模态对话框（如在编辑对话框中录入快捷键）或退出确认框时不触发，
+                // 否则用户录入按键组合的瞬间就会把对应应用启动起来。
+                if (_dialogCount == 0 && !_isCloseConfirmShown)
+                    _hotkeyService.HandleMessage(wParam.ToInt32());
             }
         }
         catch
