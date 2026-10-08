@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
@@ -54,16 +55,40 @@ public partial class EditAppDialog : Window
         SizeToContent = SizeToContent.Height;
         CanResize = false;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
+        // 限制最大高度：内容过长时由内部滚动容器承接，避免底部“保存/取消”被顶出屏幕。
+        MaxHeight = ResolveMaxHeight();
 
         BuildUI();
         LoadData();
     }
 
+    /// <summary>
+    /// 计算对话框最大高度：屏幕工作区逻辑高度的 88%（不低于 320）。
+    /// 构造期若尚未取得屏幕信息（无平台句柄），退回保守默认值：
+    /// 即便估值偏小也只是更早出现滚动条，按钮始终可见。
+    /// </summary>
+    private double ResolveMaxHeight()
+    {
+        try
+        {
+            var screen = Screens.Primary;
+            if (screen != null && screen.Scaling > 0)
+                return Math.Max(320, screen.WorkingArea.Height / screen.Scaling * 0.88);
+        }
+        catch
+        {
+            // 忽略：使用下方默认值
+        }
+
+        return 600;
+    }
+
     private void BuildUI()
     {
+        // 字段区（不含底部按钮）：由外层滚动容器承载，左右与上方留 20 边距
         var panel = new StackPanel
         {
-            Margin = new Thickness(20),
+            Margin = new Thickness(20, 20, 20, 8),
             Spacing = 12
         };
 
@@ -288,7 +313,8 @@ public partial class EditAppDialog : Window
             Orientation = Orientation.Horizontal,
             HorizontalAlignment = HorizontalAlignment.Right,
             Spacing = 8,
-            Margin = new Thickness(0, 8, 0, 0)
+            // 按钮行固定在窗口底部（不随字段区滚动），左右下与字段区对齐
+            Margin = new Thickness(20, 4, 20, 20)
         };
 
         var cancelButton = new Button { Content = "取消", MinWidth = 80 };
@@ -299,9 +325,20 @@ public partial class EditAppDialog : Window
         saveButton.Click += SaveButton_Click;
         buttonPanel.Children.Add(saveButton);
 
-        panel.Children.Add(buttonPanel);
+        // 按钮行 dock 在底部并始终可见；字段区放入滚动容器，内容超长时滚动而不挤压按钮
+        var scroll = new ScrollViewer
+        {
+            Content = panel,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled
+        };
 
-        Content = panel;
+        var root = new DockPanel();
+        DockPanel.SetDock(buttonPanel, Dock.Bottom);
+        root.Children.Add(buttonPanel);
+        root.Children.Add(scroll);
+
+        Content = root;
     }
 
     private void LoadData()
