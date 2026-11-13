@@ -220,6 +220,36 @@
                         </Grid>
                     </Border>
 
+                    <!-- 以管理员启动应用 -->
+                    <Border Padding="16,12"
+                            CornerRadius="8"
+                            Background="{DynamicResource SubtleFillColorTertiaryBrush}">
+                        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="14">
+                            <Border Width="36" Height="36" CornerRadius="8"
+                                    Background="{DynamicResource SubtleFillColorSecondaryBrush}">
+                                <TextBlock Text="&#xE72E;"
+                                           FontFamily="Segoe MDL2 Assets, Segoe UI Symbol"
+                                           FontSize="16"
+                                           HorizontalAlignment="Center"
+                                           VerticalAlignment="Center"
+                                           Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+                            </Border>
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                                <TextBlock Text="以管理员启动应用"
+                                           FontSize="14"
+                                           FontWeight="SemiBold"
+                                           Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+                                <TextBlock Text="开启后点击图标（或拖入文件）启动应用时弹出 UAC，以管理员身份运行目标程序。本程序自身无需以管理员身份运行，否则 Windows 会阻止资源管理器的拖放。"
+                                           FontSize="12"
+                                           TextWrapping="Wrap"
+                                           Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+                            </StackPanel>
+                            <ToggleSwitch Grid.Column="2"
+                                          IsChecked="{Binding LaunchAsAdministrator}"
+                                          VerticalAlignment="Center"/>
+                        </Grid>
+                    </Border>
+
                     <!-- 点击冷却 -->
                     <Border Padding="16,12"
                             CornerRadius="8"

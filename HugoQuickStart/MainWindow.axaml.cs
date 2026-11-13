@@ -11,6 +11,7 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Media;
 using Avalonia.Platform;
+using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using FluentAvalonia.UI.Controls;
 using HugoQuickStart.Models;
@@ -140,6 +141,112 @@ public partial class MainWindow : Window
             ? null
             : new ScaleTransform(scale, scale);
     }
+
+    // ================= 图标拖放：拖入文件/文件夹用对应软件打开 =================
+
+    /// <summary>
+    /// 拖拽经过图标：仅当图标已配置路径且拖拽数据包含本机文件/文件夹时显示"可放置"效果。
+    /// </summary>
+    private void AppIcon_DragOver(object? sender, DragEventArgs e)
+    {
+        var droppable = CanDropOnAppIcon(sender, e);
+        e.DragEffects = droppable ? DragDropEffects.Copy : DragDropEffects.None;
+        SetDropHighlight(sender as Control, droppable);
+        e.Handled = true;
+    }
+
+    private void AppIcon_DragLeave(object? sender, DragEventArgs e)
+    {
+        SetDropHighlight(sender as Control, false);
+        e.Handled = true;
+    }
+
+    /// <summary>输出拖拽数据的格式与文件数，便于排查"拖入无反应"。</summary>
+    private static string DescribeDragData(DragEventArgs e)
+    {
+        try
+        {
+            var formats = e.DataTransfer.Formats;
+            var files = e.DataTransfer.TryGetFiles();
+            return $"格式=[{string.Join("|", formats)}] 文件数={files?.Length ?? 0}";
+        }
+        catch (Exception ex)
+        {
+            return $"读取拖拽数据异常：{ex.GetType().Name}: {ex.Message}";
+        }
+    }
+
+    /// <summary>拖放完成：把拖入的文件/文件夹作为启动参数交给该图标对应的应用打开。</summary>
+    private void AppIcon_Drop(object? sender, DragEventArgs e)
+    {
+        e.Handled = true;
+        SetDropHighlight(sender as Control, false);
+
+        if (sender is not Control control || control.DataContext is not AppItem app)
+            return;
+
+        var paths = new List<string>();
+        var files = e.DataTransfer.TryGetFiles();
+        if (files != null)
+        {
+            foreach (var item in files)
+            {
+                var localPath = item.TryGetLocalPath();
+                if (!string.IsNullOrEmpty(localPath))
+                    paths.Add(localPath);
+            }
+        }
+
+        if (paths.Count == 0)
+        {
+            LogService.Warn("拖拽", $"Drop：未能取到本机路径，{DescribeDragData(e)}");
+            _viewModel.ShowStatus("仅支持拖入本机文件或文件夹");
+            return;
+        }
+
+        _ = _viewModel.OpenFilesWithApp(app, paths);
+    }
+
+    /// <summary>判断当前拖拽内容能否放到该图标上（图标需已配置启动路径）。</summary>
+    private static bool CanDropOnAppIcon(object? sender, DragEventArgs e)
+    {
+        if (sender is not Control control || control.DataContext is not AppItem app)
+            return false;
+        if (string.IsNullOrWhiteSpace(app.Path))
+            return false;
+
+        var files = e.DataTransfer.TryGetFiles();
+        return files is { Length: > 0 };
+    }
+
+    /// <summary>拖拽悬停高亮：用强调色描边标识当前可放置的图标。</summary>
+    private void SetDropHighlight(Control? control, bool highlight)
+    {
+        if (control is not Button button)
+            return;
+
+        if (highlight)
+        {
+            if (button.BorderThickness.Left >= DropHighlightThickness)
+                return;
+
+            _dropHighlightBrush ??= this.TryFindResource("AccentFillColorDefaultBrush", out var brush) && brush is IBrush found
+                ? found
+                : Brushes.DodgerBlue;
+            button.BorderBrush = _dropHighlightBrush;
+            button.BorderThickness = new Thickness(DropHighlightThickness);
+        }
+        else
+        {
+            if (button.BorderThickness.Left == 0)
+                return;
+            button.BorderThickness = new Thickness(0);
+            button.BorderBrush = null;
+        }
+    }
+
+    private const double DropHighlightThickness = 2;
+    private IBrush? _dropHighlightBrush;
 
     // ================= 图标悬浮提示 =================
 
@@ -330,6 +437,14 @@ public partial class MainWindow : Window
                 ? failures[0]
                 : $"{failures[0]}（另有 {failures.Count - 1} 项快捷键未生效，详见日志）");
         }
+    }
+
+    /// <summary>
+    /// 系统关机/注销时由 App 调用：直接允许关闭，不弹退出确认框，避免阻塞关机。
+    /// </summary>
+    internal void AllowSystemShutdown()
+    {
+        _allowClose = true;
     }
 
     /// <summary>

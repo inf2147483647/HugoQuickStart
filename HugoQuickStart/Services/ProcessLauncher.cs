@@ -1,29 +1,49 @@
 using System;
+using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
+using System.Threading.Tasks;
 
 namespace HugoQuickStart.Services;
 
+/// <summary>启动结果：成功 / 路径无效 / 用户取消了管理员授权（UAC）。</summary>
+public enum LaunchResult
+{
+    Ok,
+    PathInvalid,
+    ElevationDenied
+}
+
 public static class ProcessLauncher
 {
+    /// <summary>用户取消 UAC 授权时 ShellExecute 返回的错误码。</summary>
+    private const int ErrorCancelled = 1223;
+
     /// <summary>
-    /// 启动应用。支持三种方式：
+    /// 异步启动应用。支持三种方式：
     /// 1. URI 协议（如 classisland://app/settings）——交给系统按注册的协议处理程序启动；
     /// 2. 绝对路径——直接启动；
     /// 3. 相对路径——若不存在，优先在程序安装目录（exe 所在目录）下解析。
+    /// 路径解析（File.Exists）与 ShellExecute 都可能在高负载时阻塞，故整体放到线程池执行，
+    /// 避免点击图标时卡住 UI 线程。
+    /// <paramref name="asAdministrator"/> 为 true 时以管理员身份启动（弹 UAC）；URI 协议忽略该选项。
     /// </summary>
-    public static bool Launch(string path, string arguments = "")
+    public static Task<LaunchResult> LaunchAsync(string path, string arguments = "", bool asAdministrator = false) =>
+        Task.Run(() => LaunchCore(path, arguments, asAdministrator));
+
+    private static LaunchResult LaunchCore(string path, string arguments, bool asAdministrator)
     {
         if (string.IsNullOrWhiteSpace(path))
-            return false;
+            return LaunchResult.PathInvalid;
 
         var cleaned = CleanPath(path);
         if (string.IsNullOrEmpty(cleaned))
-            return false;
+            return LaunchResult.PathInvalid;
 
         try
         {
             // URI 协议（如 classisland://app/settings）：交给系统按注册的协议处理程序启动
+            // 协议链接由系统已有的处理程序打开，不为其请求管理员权限。
             if (IsUri(cleaned))
             {
                 var startInfo = new ProcessStartInfo
@@ -33,12 +53,12 @@ public static class ProcessLauncher
                     UseShellExecute = true
                 };
                 Process.Start(startInfo);
-                return true;
+                return LaunchResult.Ok;
             }
 
             var resolved = ResolvePath(cleaned);
             if (string.IsNullOrEmpty(resolved))
-                return false;
+                return LaunchResult.PathInvalid;
 
             var fileStartInfo = new ProcessStartInfo
             {
@@ -47,12 +67,20 @@ public static class ProcessLauncher
                 UseShellExecute = true,
                 WorkingDirectory = Path.GetDirectoryName(resolved) ?? string.Empty
             };
+            if (asAdministrator)
+                fileStartInfo.Verb = "runas";
+
             Process.Start(fileStartInfo);
-            return true;
+            return LaunchResult.Ok;
+        }
+        catch (Win32Exception ex) when (ex.NativeErrorCode == ErrorCancelled)
+        {
+            // 用户在 UAC 对话框中选择"否"
+            return LaunchResult.ElevationDenied;
         }
         catch (Exception)
         {
-            return false;
+            return LaunchResult.PathInvalid;
         }
     }
 

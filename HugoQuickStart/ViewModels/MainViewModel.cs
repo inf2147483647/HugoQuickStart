@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using Avalonia.Media.Imaging;
@@ -75,6 +76,21 @@ public partial class MainViewModel : ObservableObject
     /// <summary>点击冷却时长（秒），0.1–5.0，默认 1.0。</summary>
     [ObservableProperty]
     private double _launchCooldownSeconds = 1.0;
+
+    /// <summary>
+    /// 以管理员身份启动应用：开启后通过图标启动应用（含拖拽打开）时请求 UAC 提权。
+    /// 这样本程序自身可以保持普通权限运行（否则 Windows 会阻止资源管理器的拖放）。
+    /// </summary>
+    [ObservableProperty]
+    private bool _launchAsAdministrator;
+
+    partial void OnLaunchAsAdministratorChanged(bool value)
+    {
+        if (!_suppressThemeSave)
+            SaveSettingsOnly();
+        if (!_isLoadingConfig)
+            LogService.Info("设置", $"以管理员启动应用：{(value ? "已启用" : "已禁用")}");
+    }
 
     partial void OnLaunchCooldownEnabledChanged(bool value)
     {
@@ -354,6 +370,7 @@ public partial class MainViewModel : ObservableObject
         HideQuickEntries = config.HideQuickEntries;
         LaunchCooldownEnabled = config.LaunchCooldownEnabled;
         LaunchCooldownSeconds = config.LaunchCooldownSeconds <= 0 ? 1.0 : config.LaunchCooldownSeconds;
+        LaunchAsAdministrator = config.LaunchAsAdministrator;
         BackupEnabled = config.BackupEnabled;
         BackupIntervalDays = Math.Clamp(config.BackupIntervalDays, MinBackupIntervalDays, MaxBackupIntervalDays);
         BackupMaxCount = Math.Clamp(config.BackupMaxCount, 0, MaxBackupCountLimit);
@@ -380,6 +397,7 @@ public partial class MainViewModel : ObservableObject
         HideQuickEntries = HideQuickEntries,
         LaunchCooldownEnabled = LaunchCooldownEnabled,
         LaunchCooldownSeconds = LaunchCooldownSeconds,
+        LaunchAsAdministrator = LaunchAsAdministrator,
         BackupEnabled = BackupEnabled,
         BackupIntervalDays = (int)Math.Round(BackupIntervalDays),
         BackupMaxCount = (int)Math.Round(BackupMaxCount)
@@ -475,8 +493,11 @@ public partial class MainViewModel : ObservableObject
         return scheme is "classisland" or "secrandom" ? scheme : null;
     }
 
-    [RelayCommand]
-    private void LaunchApp(AppItem? app)
+    // 所有图标共用同一个命令实例：若不允许并发执行，启动期间命令的 CanExecute 会变为 false，
+    // 导致同一瞬间界面上的全部图标一起呈现“按下/禁用”外观。允许并发可保持各图标独立外观，
+    // 重复启动由点击冷却拦截。
+    [RelayCommand(AllowConcurrentExecutions = true)]
+    private async Task LaunchApp(AppItem? app)
     {
         if (app == null) return;
         LogService.Info("点击", $"点击图标「{app.Name}」");
@@ -500,6 +521,11 @@ public partial class MainViewModel : ObservableObject
             return;
         }
 
+        // 冷却起算点提前到启动尝试之前：启动改为异步后，连续点击可能在首次启动
+        // 完成前再次通过冷却检查，提前记录可保留原有的防重复启动行为。
+        if (LaunchCooldownEnabled)
+            MarkLaunched(app);
+
         // 支持绝对路径与相对安装目录的相对路径；主路径失败时按顺序尝试备选路径。
         // 参数跟随路径：每个备选用各自的参数；备选参数留空时沿用全局"启动参数"（兼容旧配置行为）。
         var candidates = new List<LaunchCandidate>
@@ -517,7 +543,14 @@ public partial class MainViewModel : ObservableObject
         foreach (var candidate in candidates)
         {
             var args = string.IsNullOrEmpty(candidate.Arguments) ? app.Arguments : candidate.Arguments;
-            if (!ProcessLauncher.Launch(candidate.Path, args))
+            var result = await ProcessLauncher.LaunchAsync(candidate.Path, args, LaunchAsAdministrator);
+            if (result == LaunchResult.ElevationDenied)
+            {
+                LogService.Warn("启动", $"用户取消了「{app.Name}」的管理员授权");
+                ShowStatus($"已取消管理员授权，未启动「{app.Name}」");
+                return;
+            }
+            if (result != LaunchResult.Ok)
                 continue;
 
             // 协议快捷入口（classisland:// 等）不弹对话框、直接启动，
@@ -533,6 +566,69 @@ public partial class MainViewModel : ObservableObject
 
         LogService.Warn("启动", $"启动失败「{app.Name}」：路径无效");
         ShowStatus($"启动失败：「{app.Name}」路径无效，点击 ✎ 修改路径");
+    }
+
+    /// <summary>
+    /// 把拖入的文件/文件夹作为启动参数，用对应快捷应用打开。
+    /// 与点击启动共用主路径 + 备选路径的尝试顺序；拖拽属于显式意图，不参与点击冷却。
+    /// </summary>
+    public async Task OpenFilesWithApp(AppItem? app, IReadOnlyList<string> files)
+    {
+        if (app == null || files.Count == 0)
+            return;
+
+        if (IsEditMode)
+        {
+            ShowStatus("编辑模式下拖拽无效，请先退出编辑模式");
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(app.Path))
+        {
+            ShowStatus($"「{app.Name}」尚未设置路径，点击 ✎ 编辑后填写");
+            return;
+        }
+
+        LogService.Info("拖拽", $"拖入 {files.Count} 个目标到「{app.Name}」");
+
+        // 每个目标独立加引号，避免含空格的中文/英文路径被拆分
+        var fileArgs = string.Join(" ", files.Select(f => $"\"{f}\""));
+
+        var candidates = new List<LaunchCandidate>
+        {
+            new(app.Path, app.Arguments)
+        };
+        foreach (var fb in app.FallbackPaths)
+        {
+            if (string.IsNullOrWhiteSpace(fb.Path))
+                continue;
+            if (!candidates.Exists(c => string.Equals(c.Path, fb.Path, StringComparison.OrdinalIgnoreCase)))
+                candidates.Add(fb);
+        }
+
+        foreach (var candidate in candidates)
+        {
+            var extra = string.IsNullOrEmpty(candidate.Arguments) ? app.Arguments : candidate.Arguments;
+            var args = string.IsNullOrWhiteSpace(extra) ? fileArgs : $"{extra} {fileArgs}";
+            var result = await ProcessLauncher.LaunchAsync(candidate.Path, args, LaunchAsAdministrator);
+            if (result == LaunchResult.ElevationDenied)
+            {
+                LogService.Warn("拖拽", $"用户取消了「{app.Name}」的管理员授权");
+                ShowStatus($"已取消管理员授权，未打开「{app.Name}」");
+                return;
+            }
+            if (result != LaunchResult.Ok)
+                continue;
+
+            MarkLaunched(app);
+            var target = files.Count == 1 ? Path.GetFileName(files[0]) : $"{files.Count} 个项目";
+            LogService.Info("拖拽", $"已用「{app.Name}」打开：{target}");
+            ShowStatus($"正在用「{app.Name}」打开：{target}");
+            return;
+        }
+
+        LogService.Warn("拖拽", $"用「{app.Name}」打开失败：路径无效");
+        ShowStatus($"打开失败：「{app.Name}」路径无效，点击 ✎ 修改路径");
     }
 
     /// <summary>判断同一图标是否正处于点击冷却中。</summary>

@@ -30,6 +30,12 @@ public class AppConfig
     /// <summary>点击冷却时长（秒），0.1–5.0，默认 1.0。持久化到配置文件。</summary>
     public double LaunchCooldownSeconds { get; set; } = 1.0;
 
+    /// <summary>
+    /// 以管理员身份启动应用：开启后点击/拖拽启动应用时请求 UAC 提权。
+    /// 本程序自身因此可以保持普通权限（否则 Windows 会阻止资源管理器向管理员窗口拖放）。
+    /// </summary>
+    public bool LaunchAsAdministrator { get; set; } = false;
+
     /// <summary>备份总开关：开启后按周期自动备份配置。默认开启。持久化到配置文件。</summary>
     public bool BackupEnabled { get; set; } = true;
 
