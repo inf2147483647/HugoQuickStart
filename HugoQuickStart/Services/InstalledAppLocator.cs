@@ -234,7 +234,7 @@ public static class InstalledAppLocator
     }
 
     /// <summary>
-    /// 在 Steam 游戏库中定位游戏目录下的 EXE（如 VRChat -> steamapps\common\VRChat\VRChat.exe）。
+    /// 在 Steam 游戏库中定位游戏目录下的 EXE（如 VRChat -> steamapps\common\VRChat\launch.exe）。
     /// </summary>
     public static string? FindSteamGameExe(string gameFolder, string exeName)
     {

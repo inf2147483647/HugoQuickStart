@@ -36,7 +36,7 @@ public static class DefaultAppResolver
             case KeyMinecraft:
                 return ResolveByDisplayName("Minecraft");
             case KeyVrchat:
-                return ResolveSteamGame("VRChat", "VRChat.exe");
+                return ResolveSteamGame("VRChat", "launch.exe");
             default:
                 return null;
         }
