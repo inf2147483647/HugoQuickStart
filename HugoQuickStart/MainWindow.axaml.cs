@@ -34,6 +34,8 @@ public partial class MainWindow : Window
     private int _dialogCount;
     private bool _allowClose;
     private bool _isCloseConfirmShown;
+    /// <summary>当前挂起的模态子窗口（ShowDialog 打开中），系统关机时需主动关闭。</summary>
+    private readonly HashSet<Window> _modalWindows = new();
     private Size _lastSize = new Size();
     /// <summary>当前进程 ID，用于在 Z 序扫描中跳过自己拥有的窗口（悬浮球、对话框等）。</summary>
     private readonly uint _ownPid = (uint)Environment.ProcessId;
@@ -441,10 +443,19 @@ public partial class MainWindow : Window
 
     /// <summary>
     /// 系统关机/注销时由 App 调用：直接允许关闭，不弹退出确认框，避免阻塞关机。
+    /// 模态子窗口默认由属主关闭，但在此期间它们若仍留在窗口列表中，
+    /// Avalonia 会认为"仍有窗口未关闭"而取消本次关机，因此在这里主动关闭。
     /// </summary>
     internal void AllowSystemShutdown()
     {
         _allowClose = true;
+        LogService.Info("退出", "收到系统关机/注销请求，跳过退出确认，直接关闭");
+
+        foreach (var dialog in _modalWindows.ToArray())
+            dialog.Close();
+
+        _settingsWindow?.Close();
+        _floatBallWindow?.Close();
     }
 
     /// <summary>
@@ -453,8 +464,12 @@ public partial class MainWindow : Window
     /// </summary>
     private async void OnClosing(object? sender, WindowClosingEventArgs e)
     {
-        if (_allowClose)
+        // 系统关机/注销：无论此前是否已设置标志，一律直接放行，绝不弹出确认框阻塞关机。
+        if (_allowClose || e.CloseReason == WindowCloseReason.OSShutdown)
+        {
+            _allowClose = true;
             return;
+        }
 
         // 默认先阻止本次关闭，等待用户确认
         e.Cancel = true;
@@ -775,12 +790,14 @@ public partial class MainWindow : Window
     private async Task<TResult?> ShowModalAsync<TResult>(Window dialog) where TResult : struct
     {
         _dialogCount++;
+        _modalWindows.Add(dialog);
         try
         {
             return await dialog.ShowDialog<TResult?>(this);
         }
         finally
         {
+            _modalWindows.Remove(dialog);
             _dialogCount--;
         }
     }
@@ -789,12 +806,14 @@ public partial class MainWindow : Window
     private async Task ShowModalAsync(Window dialog)
     {
         _dialogCount++;
+        _modalWindows.Add(dialog);
         try
         {
             await dialog.ShowDialog(this);
         }
         finally
         {
+            _modalWindows.Remove(dialog);
             _dialogCount--;
         }
     }
